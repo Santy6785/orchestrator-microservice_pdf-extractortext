@@ -1,0 +1,18 @@
+[project]
+name = "orquestador"
+version = "0.1.0"
+description = "N-Layers microservice orchestrator with FastAPI and uv"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi",
+    "httpx",
+]
+
+[tool.uv]
+packages = ["**/*.py"]
+exclude = [".python-version"]
+
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.backends._legacy:_Backend"
