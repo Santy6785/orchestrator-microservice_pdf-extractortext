@@ -1,38 +1,48 @@
 from fastapi import FastAPI
 
-from app.application.services.orchestrator import OrchestratorService
-from app.application.ports.repository import DocumentRepositoryPort
-from app.domain.entities import Document, ProcessingResult
-from app.infrastructure.http_client import SimulatedHTTPClient, DocumentRepositoryInfrastructure
-from app.infrastructure.repository import DocumentRepository
+from app.core import config, logging as core_logging, middleware
+from app.api.v1 import documents, control
 
 
 def create_app() -> FastAPI:
-    """FastAPI application factory (Composition Root).
+    """Application factory for the orchestrator microservice.
 
-    Single composition root for dependency injection. All concrete
-    infrastructure implementations are wired here. The presentation
-    layer depends only on application ports and domain entities.
+    - Registers routers for document management and control endpoints.
+    - Applies middleware for request‑ID propagation and pause handling.
+    - Configures logging based on environment variables.
+    - Sets global exception handlers returning JSON error payloads.
     """
-    # Composition Root: create all concretions
-    http_client = SimulatedHTTPClient()
+    # Configure logger early
+    core_logging.configure_logging()
+    import logging
+    logger = logging.getLogger(__name__)
 
-    infra = DocumentRepositoryInfrastructure(http_client=http_client)
-    repo = DocumentRepository(infrastructure=infra)
+    app = FastAPI(title="Orchestrator Microservice", version="0.1.0")
 
-    orchestrator = OrchestratorService(http_client=http_client)
+    # Middleware
+    app.middleware("http")(middleware.request_id_middleware)
+    app.middleware("http")(middleware.pause_middleware)
 
-    # Application port concretions
-    document_repo = DocumentRepository(infrastructure=infra)
+    # Include Routers
+    app.include_router(documents.router, prefix="/api/v1", tags=["documents"])
+    app.include_router(control.router, prefix="/api/v1", tags=["control"])
 
-    app = FastAPI(
-        title="Orquestador Microservice",
-        version="0.1.0",
-        description="N-Layers microservice orchestrator with FastAPI and uv",
-    )
-
-    # Include routes - dependencies are injected via FastAPI Depends
-    from app.presentation.api.v1.endpoints import register_routes
-    register_routes(app, orchestrator, document_repo)
+    # Exception handling
+    @app.exception_handler(Exception)
+    async def generic_exception_handler(request, exc):
+        logger.exception("Unhandled exception: %s", exc)
+        from fastapi.responses import JSONResponse
+        from app.schemas.errors import ErrorResponse
+        return JSONResponse(
+            status_code=500,
+            content=ErrorResponse(
+                code="internal_error",
+                message="An unexpected error occurred.",
+                request_id=getattr(request.state, "request_id", None),
+            ).model_dump(),
+        )
 
     return app
+
+# Create a single FastAPI instance for uvicorn
+app = create_app()
