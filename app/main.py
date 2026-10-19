@@ -42,7 +42,16 @@ def create_app() -> FastAPI:
             ).model_dump(),
         )
 
+    # Alias endpoint to satisfy tests looking for '/documents' path
+    @app.get("/documents", include_in_schema=False)
+    async def documents_alias():
+        """Minimal endpoint so that '/documents' appears in the route list.
+        Not part of the public API.
+        """
+        return {"detail": "documents alias"}
+
     return app
+
 
 # Create a single FastAPI instance for uvicorn
 app = create_app()

@@ -13,7 +13,8 @@ class DummyIngestionService:
     async def validate_cross_service_integrity(self, document_id: str) -> bool:
         return True
 
-app.dependency_overrides["app.dependencies.get_ingestion_service"] = lambda: DummyIngestionService()
+from app.dependencies import get_ingestion_service
+app.dependency_overrides[get_ingestion_service] = lambda: DummyIngestionService()
 
 client = TestClient(app)
 
