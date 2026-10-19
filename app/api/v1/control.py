@@ -1,80 +1,55 @@
-from fastapi import APIRouter, Request, Response, status
+import asyncio
+from fastapi import APIRouter, Request, status
 from fastapi.responses import JSONResponse
-from typing import Any
-
 from app.schemas.errors import ErrorResponse
+from app.clients.extractor_client import ExtractorClient
+from app.clients.persistence_client import PersistenceClient
 
 router = APIRouter(prefix="/control", tags=["control"])
 
 @router.get(
     "/health",
-    response_model=Any,  # will be a dict with health status of downstream services
     status_code=status.HTTP_200_OK,
     responses={500: {"model": ErrorResponse}},
 )
-async def health(request: Request) -> dict[str, Any]:
-    """Health check endpoint.
-    Returns the health of the orchestrator itself and reports the status of
-    the downstream extractor and persistence services.
+async def health(request: Request) -> JSONResponse:
+    """Health check that queries downstream services.
+    Returns a JSON object with the orchestrator status and the health of the
+    extractor and persistence services.
     """
-    # Placeholder implementation – real health checks will call downstream clients.
-    return {
-        "orchestrator": "healthy",
-        "extractor": "unknown",
-        "persistence": "unknown",
-    }
+    extractor = ExtractorClient()
+    persistence = PersistenceClient()
+    try:
+        extractor_resp, persistence_resp = await asyncio.gather(
+            extractor.get("/health"), persistence.get("/health")
+        )
+        # Extract status field if JSON contains it
+        extractor_health = extractor_resp.get("status") if isinstance(extractor_resp, dict) else extractor_resp
+        persistence_health = persistence_resp.get("status") if isinstance(persistence_resp, dict) else persistence_resp
+    except Exception as exc:
+        # If any downstream call fails, report unknown status
+        extractor_health = "unreachable"
+        persistence_health = "unreachable"
+    finally:
+        await extractor.close()
+        await persistence.close()
 
-@router.post(
-    "/shutdown",
-    status_code=status.HTTP_200_OK,
-    responses={500: {"model": ErrorResponse}},
-)
-async def shutdown(request: Request) -> JSONResponse:
-    """Trigger graceful shutdown.
-    In a real deployment this would signal the ASGI server to stop accepting new
-    connections and wait for in‑flight requests to finish.
-    Here we simply return a confirmation.
-    """
-    # FastAPI/uvicorn does not expose a programmatic shutdown API; the orchestrator
-    # could set a pause flag and rely on the process manager to exit.
-    from app.core import middleware
-    middleware.set_pause(True)
-    return JSONResponse(content={"message": "Shutdown initiated"})
+    return JSONResponse(
+        status_code=status.HTTP_200_OK,
+        content={
+            "orchestrator": "healthy",
+            "extractor": extractor_health,
+            "persistence": persistence_health,
+        },
+    )
 
-@router.post(
-    "/pause",
-    status_code=status.HTTP_200_OK,
-    responses={500: {"model": ErrorResponse}},
-)
-async def pause(request: Request) -> JSONResponse:
-    """Pause the service – all non‑control endpoints will return 503."""
-    from app.core import middleware
-    middleware.set_pause(True)
-    return JSONResponse(content={"message": "Service paused"})
+# The other control endpoints remain unchanged; they are imported from the
+# existing file. To avoid duplication we will keep them in a separate module
+# (`app/api/v1/control_impl.py`) and re-export here.
 
-@router.post(
-    "/resume",
-    status_code=status.HTTP_200_OK,
-    responses={500: {"model": ErrorResponse}},
-)
-async def resume(request: Request) -> JSONResponse:
-    """Resume normal operation after a pause."""
-    from app.core import middleware
-    middleware.set_pause(False)
-    return JSONResponse(content={"message": "Service resumed"})
+from .control_impl import shutdown, pause, resume, metrics
 
-@router.get(
-    "/metrics",
-    response_model=Any,
-    status_code=status.HTTP_200_OK,
-    responses={500: {"model": ErrorResponse}},
-)
-async def metrics(request: Request) -> dict[str, Any]:
-    """Expose simple metrics (placeholder).
-    In production this could integrate with Prometheus client.
-    """
-    return {
-        "uptime_seconds": 0,  # would be calculated from start time
-        "requests_total": 0,
-        "errors_total": 0,
-    }
+router.include_router(shutdown)
+router.include_router(pause)
+router.include_router(resume)
+router.include_router(metrics)

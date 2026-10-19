@@ -17,7 +17,7 @@ def create_app() -> FastAPI:
     import logging
     logger = logging.getLogger(__name__)
 
-    app = FastAPI(title="Orchestrator Microservice", version="0.1.0")
+    app = FastAPI(title="Orquestador Microservice", version="0.1.0")
 
     # Middleware
     app.middleware("http")(middleware.request_id_middleware)
