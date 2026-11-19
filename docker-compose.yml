@@ -10,7 +10,8 @@ services:
       - "8000:8000"
     # Optional: add healthcheck if needed
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/control/health"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/control/health', timeout=8)"]
       interval: 30s
-      timeout: 5s
+      timeout: 10s
+      start_period: 15s
       retries: 3
