@@ -20,8 +20,8 @@
 | Módulo Monolito | Destino | Justificación y Rol en la Nueva Arquitectura |
 |---|---|---|
 | **`app/main.py`** | **Orquestador** (adaptado) | Se convierte en el punto de entrada FastAPI del orquestador. Configura middlewares (`CORSMiddleware`, `RequestIDMiddleware`, `ServerLifecycleMiddleware`), manejadores globales de excepciones JSON, lifespan y registro de rutas. |
-| **`app/api/routes.py`** | **Orquestador** (`app/api/v1/`) | Controladores HTTP del orquestador. Expone los endpoints consumidos por el frontend (`/upload`, CRUD `/documents/`, etc.). Valida parámetros HTTP y delega la ejecución a `OrchestrationService` y `DocumentManagementService`. |
-| **`app/api/dependencies.py`** | **Orquestador** (`app/api/dependencies.py`) | Inyección de dependencias de FastAPI (`Depends`). En el orquestador inyecta los clientes HTTP (`ExtractorClient`, `PersistenceClient`), configuración (`Settings`) y servicios de orquestación. |
+| **`app/api/routes.py`** | **Orquestador** (`app/api/v1/`) | Controladores HTTP del orquestador. Expone los endpoints consumidos por el frontend (`/upload`, CRUD `/documents/`, etc.). Valida parámetros HTTP y delega la ejecución a `IngestionService` en `app/services/ingestion.py`. |
+| **`app/api/dependencies.py`** | **Orquestador** (`app/dependencies.py`) | Inyección de dependencias de FastAPI (`Depends`). En el orquestador inyecta `IngestionService` (`get_ingestion_service`), los clientes HTTP (`ExtractorClient`, `PersistenceClient`) y configuración (`Settings`). |
 | **`app/services/pdf_service.py`** | **ELIMINADO** | Código huérfano/duplicado previo a la arquitectura limpia. No es utilizado en producción por ningún componente. |
 | **`app/infrastructure/pdf/pdf_service.py`** | **ELIMINADO** | Wrapper incompleto y redundante que no implementa el método `process_pdf` del protocolo. Solo figuraba en un test unitario aislado. |
 | **`app/application/pdf/pdf_extractor.py`** | **Extractor** | Protocolo/puerto (`PdfExtractor`) y dataclass de resultado (`PdfProcessingResult`). Define el contrato de dominio del microservicio extractor. |
