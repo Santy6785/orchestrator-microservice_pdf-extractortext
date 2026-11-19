@@ -28,10 +28,10 @@
 | **`app/infrastructure/pdf/pypdf_extractor.py`** | **Extractor** | Implementación concreta de extracción de texto y dimensiones usando `pypdf`. Pasa a ser el núcleo del microservicio extractor. |
 | **`app/config/settings.py`** | **Orquestador / Extractor / Persistencia** (específico por servicio) | En el orquestador se convierte en `app/core/config.py` con `pydantic-settings`, conteniendo URLs de dependencias (`EXTRACTOR_SERVICE_URL`, `PERSISTENCE_SERVICE_URL`), timeouts, retries y nivel de log. Sin variables de DB. |
 | **`app/application/config_service.py`** | **ELIMINADO** | Sobre-abstracción innecesaria que envolvía a `Settings`. Se reemplaza por inyección directa de `Settings` con `Depends(get_settings)`, estándar en FastAPI. |
-| **`app/application/services/checksum_service.py`** | **Dividido entre Orquestador y Persistencia** | - **Cálculo (Orquestador):** Se ejecuta en `app/services/orchestrator_service.py` en memoria para validación fail-fast (409 inmediato sin saturar la red).<br>- **Unicidad (Persistencia):** Verificación de existencia en base de datos e índice único en colección MongoDB. |
-| **`app/application/services/document_ingestion_service.py`** | **Orquestador** (`app/services/ingestion_orchestrator.py`) | Lógica de orquestación de subida: recibe archivo -> calcula SHA-256 -> verifica existencia con Persistencia -> si no existe, invoca Extractor -> envía texto y metadatos a Persistencia -> retorna JSON al cliente. |
-| **`app/application/services/document_service.py`** | **Dividido (Orquestador y Persistencia)** | - **En Orquestador:** Servicio fachada que delega operaciones CRUD (`get_all`, `get_by_id`, `update`, `delete`) al cliente HTTP de persistencia.<br>- **En Persistencia:** Lógica de negocio CRUD sobre la base de datos MongoDB. |
-| **`app/application/dto/document_dto.py`** | **Orquestador** (`app/schemas/document.py`) | Se migra a esquemas Pydantic V2 (`DocumentResponse`, `DocumentListResponse`, `DocumentUpdate`, `IngestionResult`) para validación y serialización de peticiones/respuestas. |
+| **`app/application/services/checksum_service.py`** | **Orquestador** (`app/services/ingestion.py`) | Lógica de cálculo de checksum SHA-256 en memoria para validación fail-fast (409 inmediato sin saturar la red). Verificación de existencia vía HTTP al microservicio de persistencia. |
+| **`app/application/services/document_ingestion_service.py`** | **Orquestador** (`app/services/ingestion.py`) | Lógica de orquestación de subida: recibe archivo -> calcula SHA-256 -> verifica existencia con Persistencia -> si no existe, invoca Extractor -> envía texto y metadatos a Persistencia -> retorna JSON al cliente. |
+| **`app/application/services/document_service.py`** | **Orquestador** (`app/services/ingestion.py`) | Servicio de ingesta y validación de documentos. Implementa `process_document` y `validate_cross_service_integrity` delegando en `ExtractorClient` y `PersistenceClient`. |
+| **`app/application/dto/document_dto.py`** | **Orquestador** (`app/schemas/documents.py`) | Esquemas Pydantic V2 (`DocumentUploadRequest`, `DocumentResponse`, `ProcessingResult`) para validación y serialización de peticiones/respuestas. |
 | **`app/domain/models/document.py`** | **Persistencia** | Entidad de dominio con mapeo BSON/MongoDB (`_id`, `checksum`, `extracted_text`, `created_at`). El orquestador no gestiona entidades de base de datos directamente, solo DTOs/esquemas. |
 | **`app/domain/repositories/document_repository.py`** | **Persistencia** | Puerto de persistencia (`DocumentRepositoryPort`). |
 | **`app/infrastructure/persistence/database.py`** | **Persistencia** | Gestión de conexión con Motor/MongoDB y Singleton `Database`. |
@@ -68,44 +68,55 @@
 
 ## 4. Estructura de Capas del Orquestador
 
-Para cumplir con la arquitectura en 3 capas (MVC) solicitada:
+Estructura real del proyecto después de la eliminación de código muerto (arquitectura MVC informal):
 
 ```
 orchestrator-microservice_pdf-extractortext/
 ├── app/
-│   ├── api/                 # Capa de Presentación / Controladores
-│   │   ├── dependencies.py  # Inyección de dependencias
+│   ├── api/
+│   │   ├── __init__.py
 │   │   └── v1/
-│   │       ├── documents.py # Endpoints de documentos (/api/v1/documents)
-│   │       └── control.py   # Endpoints de ciclo de vida (/health, /shutdown, /pause, /resume, /metrics)
-│   ├── services/            # Capa de Aplicación / Servicios de Orquestación
-│   │   ├── ingestion_orchestrator.py # Flujo de subida (hash -> check -> extract -> persist)
-│   │   └── document_service.py       # Coordinación de consultas y CRUD
-│   ├── clients/             # Capa de Clientes HTTP hacia otros Microservicios
-│   │   ├── base.py          # Cliente base HTTP con retry, backoff, timeouts y X-Request-ID
-│   │   ├── extractor_client.py   # Cliente hacia el microservicio extractor
-│   │   └── persistence_client.py # Cliente hacia el microservicio persistencia
-│   ├── core/                # Configuración, Logging y Estado
-│   │   ├── config.py        # Settings con Pydantic V2 (URLs, timeouts, log levels)
-│   │   ├── logging.py       # Logger estructurado configurable (input, error, debug, warn)
-│   │   ├── lifecycle.py     # Gestor de estado (active requests, pause/resume, shutdown)
-│   │   └── middleware.py    # Middlewares de Request-ID y control de pausa
-│   ├── schemas/             # Modelos de transferencia de datos (Pydantic DTOs)
-│   │   ├── document.py      # Schemas para petición y respuesta de documentos
-│   │   └── common.py        # Schemas para errores, salud y métricas
-│   └── main.py              # Application Factory y Composition Root
+│   │       ├── __init__.py
+│   │       ├── control.py        # Endpoints de ciclo de vida (/health, /shutdown, /pause, /resume, /metrics)
+│   │       ├── control_impl.py   # Implementación de endpoints de ciclo de vida
+│   │       └── documents.py      # Endpoints de documentos (/api/v1/documents)
+│   ├── clients/                  # Clientes HTTP hacia otros microservicios
+│   │   ├── base.py               # BaseClient: retry, backoff, timeouts, propagación de X-Request-ID
+│   │   ├── extractor_client.py   # ExtractorClient (env: EXTRACTOR_SERVICE_URL)
+│   │   └── persistence_client.py # PersistenceClient (env: PERSISTENCE_SERVICE_URL)
+│   ├── core/                     # Configuración, logging y middleware
+│   │   ├── config.py             # Settings con pydantic-settings (URLs, timeouts, log levels)
+│   │   ├── logging.py            # Configuración de logging
+│   │   └── middleware.py         # Request-ID y middlewares de control de pausa
+│   ├── dependencies.py           # Inyección de dependencias FastAPI (Depends)
+│   ├── domain/
+│   │   └── __init__.py           # Paquete de dominio (vacío tras eliminación de entities.py)
+│   ├── main.py                   # Application Factory (create_app) e instancia `app`
+│   ├── schemas/
+│   │   ├── documents.py          # Pydantic V2: DocumentUploadRequest, DocumentResponse, ProcessingResult
+│   │   └── errors.py             # ErrorResponse
+│   └── services/
+│       ├── __init__.py
+│       └── ingestion.py          # IngestionService: proceso de ingesta y validación de documentos
 ├── docs/
 │   ├── analisis/
 │   │   └── orquestador-analisis.md
-│   ├── contratos/           # Contratos de la Fase 2
-│   ├── migracion.md         # Este documento
-│   └── decisiones.md        # Registro de ADRs
+│   ├── contratos/                # Contratos de endpoints (markdown)
+│   ├── decisiones.md             # Registro de ADRs
+│   └── migracion.md              # Este documento
 ├── tests/
-│   ├── unit/                # Tests unitarios con mocks
-│   ├── integration/         # Tests de rutas con clientes simulados
-│   └── system/              # Tests end-to-end con app levantada y dobles
-├── pyproject.toml           # Configuración de dependencias con uv (hatchling)
-├── Dockerfile               # Contenedor con uv
-├── docker-compose.yml       # Definición con Traefik
-└── build.sh                 # Script de validación (lint + test + docker build)
+│   ├── __init__.py
+│   ├── test_api.py               # Tests de creación de la app y routers
+│   ├── test_documents.py         # Tests de upload y validate
+│   └── test_health_integration.py # Tests de integración con respx
+├── Dockerfile                    # Multi-stage build con uv
+├── docker-compose.yml            # Definición del servicio orquestador
+├── build.sh                      # Script de validación (lint + test + docker build)
+├── pyproject.toml                # Dependencias y configuración de pytest/ruff
+├── uv.lock                       # Lockfile de dependencias
+├── README.md
+├── LICENSE
+├── main.py
+├── .gitignore
+└── .github/workflows/ci.yml
 ```
