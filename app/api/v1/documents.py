@@ -18,7 +18,9 @@ router = APIRouter(prefix="/documents", tags=["documents"])
     status_code=status.HTTP_202_ACCEPTED,
     responses={
         400: {"model": ErrorResponse},
+        409: {"model": ErrorResponse},
         500: {"model": ErrorResponse},
+        502: {"model": ErrorResponse},
     },
 )
 async def upload_document(

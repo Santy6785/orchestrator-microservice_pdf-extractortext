@@ -28,3 +28,9 @@ class PersistenceClient(BaseClient):
         """
         result = await self.get(f"/api/v1/documents/{document_id}/validate")
         return result.get("valid", False)
+
+    async def check_duplicate_by_checksum(self, checksum: str) -> Any:
+        """Check whether a document with the given checksum already exists.
+        Calls ``GET /api/v1/documents/by-checksum/{checksum}`` on the persistence service.
+        """
+        return await self.get(f"/api/v1/documents/by-checksum/{checksum}")

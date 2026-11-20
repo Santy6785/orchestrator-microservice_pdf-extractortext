@@ -9,3 +9,4 @@ class ErrorResponse(BaseModel):
     code: str = Field(..., description="Machine‑readable error identifier")
     message: str = Field(..., description="Human‑readable description of the error")
     request_id: Optional[str] = Field(None, description="Correlation ID for the request")
+    existing_id: Optional[str] = Field(None, description="ID of the existing document when reporting a duplicate")
