@@ -1,6 +1,5 @@
 import asyncio
 import logging
-import os
 from typing import Any
 
 import httpx
@@ -12,14 +11,15 @@ logger = logging.getLogger(__name__)
 
 class BaseClient:
     """Base HTTP client with retry, timeout and request‑ID propagation.
-    Subclasses should set ``service_url`` to the appropriate env var value.
+    The ``service_url`` is injected from the central Settings instance and must
+    not contain hardcoded URLs or localhost defaults.
     """
 
-    def __init__(self, timeout: float = 5.0, max_retries: int = 3, backoff_factor: float = 0.5):
+    def __init__(self, service_url: str, timeout: float = 5.0, max_retries: int = 3, backoff_factor: float = 0.5):
         self.timeout = timeout
         self.max_retries = max_retries
         self.backoff_factor = backoff_factor
-        self.service_url = os.getenv(self.env_var_name, "http://localhost")
+        self.service_url = service_url
         self._client = httpx.AsyncClient(timeout=self.timeout)
 
     async def _request(self, method: str, path: str, **kwargs) -> Any:

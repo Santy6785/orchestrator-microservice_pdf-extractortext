@@ -4,8 +4,8 @@ services:
     build: .
     container_name: orchestrator
     environment:
-      - EXTRACTOR_SERVICE_URL=http://mock-extractor
-      - PERSISTENCE_SERVICE_URL=http://mock-persistence
+      - EXTRACTOR_SERVICE_URL=http://extractor
+      - PERSISTENCE_SERVICE_URL=http://persistence:8000
     ports:
       - "8000:8000"
     # Optional: add healthcheck if needed

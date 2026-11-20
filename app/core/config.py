@@ -1,14 +1,30 @@
-import logging
-import os
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+
 class Settings(BaseSettings):
-    """Application configuration loaded from environment variables."""
+    """Configuración de la aplicación cargada desde variables de entorno.
 
-    extractor_service_url: str = os.getenv("EXTRACTOR_SERVICE_URL", "http://localhost:8001")
-    persistence_service_url: str = os.getenv("PERSISTENCE_SERVICE_URL", "http://localhost:8002")
-    log_level: str = os.getenv("LOG_LEVEL", "INFO")
+    Variables obligatorias:
+        EXTRACTOR_SERVICE_URL  URL base del microservicio Extractor.
+        PERSISTENCE_SERVICE_URL URL base del microservicio de Persistencia.
 
-    model_config = SettingsConfigDict(env_prefix="", env_file=".env", env_file_encoding="utf-8")
+    Si falta alguna variable obligatoria, Pydantic lanza ValidationError
+    al instanciar Settings, haciendo fallar el arranque con un mensaje que
+    identifica claramente la variable faltante.
 
+    Variables opcionales:
+        LOG_LEVEL              Nivel de logging (default: INFO).
+    """
+
+    extractor_service_url: str
+    persistence_service_url: str
+    log_level: str = "INFO"
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+    )
+
+
+# Única instancia compartida de la configuración.
 settings = Settings()
