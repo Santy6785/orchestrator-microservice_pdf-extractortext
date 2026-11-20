@@ -1,11 +1,14 @@
-from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, status
-from fastapi import Request
-from typing import Any
+from fastapi import APIRouter, Depends, File, UploadFile, status
 
-from app.schemas.documents import DocumentUploadRequest, DocumentResponse, ProcessingResult
-from app.schemas.errors import ErrorResponse
 from app.dependencies import get_ingestion_service
+from app.schemas.documents import ProcessingResult
+from app.schemas.errors import ErrorResponse
 from app.services.ingestion import IngestionService
+from app.services.validation import (
+    compute_sha256_hex,
+    validate_file_size,
+    validate_pdf_magic_bytes,
+)
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
@@ -19,16 +22,18 @@ router = APIRouter(prefix="/documents", tags=["documents"])
     },
 )
 async def upload_document(
-    request: Request,
     file: UploadFile = File(...),
-    metadata: dict[str, Any] | None = None,
     ingestion_service: IngestionService = Depends(get_ingestion_service),
 ):
-    """Accept a PDF file and start asynchronous processing.
-    The file is streamed to the extractor service; the response is immediate
-    with a 202 status and a processing result payload.
+    """Accept a PDF file via multipart/form-data and start asynchronous processing.
+    The file bytes are read in memory and forwarded to the ingestion service;
+    the response is immediate with a 202 status and a processing result payload.
     """
-    payload = {"filename": file.filename, "metadata": metadata or {}}
+    data = await file.read()
+    validate_file_size(data)
+    validate_pdf_magic_bytes(data)
+    checksum = compute_sha256_hex(data)
+    payload = {"filename": file.filename, "content": data, "checksum": checksum}
     result = await ingestion_service.process_document(payload)
     return result
 
