@@ -6,11 +6,11 @@ evitando llamadas de red reales.
 
 import httpx
 import respx
-from httpx import Response
 from fastapi.testclient import TestClient
+from httpx import Response
 
-from app.main import app
 from app.dependencies import get_ingestion_service
+from app.main import app
 from app.services.ingestion import IngestionService
 from app.services.validation import compute_sha256_hex
 
@@ -46,7 +46,7 @@ def test_duplicate_document_returns_409_without_calling_extractor():
             f"{PERSISTENCE_BASE}/api/v1/documents/by-checksum/{CHECKSUM}"
         ).mock(
             return_value=Response(
-                200, json={"exists": True, "document_id": "doc-123", "checksum": CHECKSUM}
+                200, json={"exists": True, "id": "doc-123", "checksum_sha256": CHECKSUM}
             )
         )
         extractor_route = respx.post(f"{EXTRACTOR_BASE}/api/v1/extract").mock(

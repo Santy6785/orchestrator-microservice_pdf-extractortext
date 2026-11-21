@@ -84,7 +84,7 @@ class IngestionService:
                 )
             else:
                 # HTTP 200: document already exists, it is a duplicate.
-                if not isinstance(duplicate_info, dict) or "document_id" not in duplicate_info:
+                if not isinstance(duplicate_info, dict) or "id" not in duplicate_info:
                     logger.error(
                         "Persistence service returned invalid duplicate response for checksum %s: %s",
                         checksum,
@@ -97,7 +97,7 @@ class IngestionService:
                             message="Invalid response from persistence service",
                         ).model_dump(),
                     )
-                existing_id = duplicate_info.get("document_id")
+                existing_id = duplicate_info.get("id")
                 logger.warning(
                     "Duplicate document detected: checksum=%s existing_id=%s",
                     checksum,
