@@ -3,7 +3,7 @@ import hashlib
 from fastapi.testclient import TestClient
 
 from app.main import app
-from app.schemas.documents import ProcessingResult
+from app.schemas.documents import DocumentUploadResponse
 from app.services.validation import MAX_FILE_SIZE, compute_sha256_hex
 
 
@@ -13,7 +13,15 @@ class DummyIngestionService:
 
     async def process_document(self, payload):
         self.last_payload = payload
-        return ProcessingResult(document_id="dummy-id", status="queued", detail=None)
+        return DocumentUploadResponse(
+            id="dummy-id",
+            checksum=payload.get("checksum", ""),
+            extracted_text="# dummy text",
+            created_at="2026-01-01T00:00:00",
+            filename=payload.get("filename", "unknown.pdf"),
+            page_count=1,
+            file_size_bytes=len(payload.get("content", b"")),
+        )
 
     async def validate_cross_service_integrity(self, document_id: str) -> bool:
         return True
@@ -31,10 +39,41 @@ client = TestClient(app)
 def test_upload_document():
     files = {"file": ("test.pdf", b"%PDF-1.4...", "application/pdf")}
     response = client.post("/api/v1/documents/upload", files=files)
-    assert response.status_code == 202
+    assert response.status_code == 200
     data = response.json()
-    assert data["document_id"] == "dummy-id"
-    assert data["status"] == "queued"
+    assert data["id"] == "dummy-id"
+    assert data["filename"] == "test.pdf"
+
+
+def test_upload_response_contract_fields_and_types():
+    """Contrato O-08: respuesta 200 con los 7 campos y tipos esperados."""
+    files = {"file": ("test.pdf", b"%PDF-1.4...", "application/pdf")}
+    response = client.post("/api/v1/documents/upload", files=files)
+    assert response.status_code == 200
+    data = response.json()
+
+    expected_fields = {
+        "id": str,
+        "checksum": str,
+        "extracted_text": str,
+        "created_at": str,
+        "filename": str,
+        "page_count": int,
+        "file_size_bytes": int,
+    }
+    assert set(data.keys()) == set(expected_fields.keys())
+    for field, expected_type in expected_fields.items():
+        assert field in data, f"Falta el campo '{field}' en la respuesta"
+        if expected_type is int:
+            assert type(data[field]) is int, (
+                f"El campo '{field}' debe ser {expected_type.__name__} real, "
+                f"fue {type(data[field]).__name__}"
+            )
+        else:
+            assert isinstance(data[field], expected_type), (
+                f"El campo '{field}' debe ser {expected_type.__name__}, "
+                f"fue {type(data[field]).__name__}"
+            )
 
 
 def test_upload_document_payload_contains_valid_checksum():
@@ -42,7 +81,7 @@ def test_upload_document_payload_contains_valid_checksum():
     content = b"%PDF-1.4 some content for checksum verification"
     files = {"file": ("test.pdf", content, "application/pdf")}
     response = client.post("/api/v1/documents/upload", files=files)
-    assert response.status_code == 202
+    assert response.status_code == 200
 
     payload = dummy_ingestion_service.last_payload
     assert payload is not None
@@ -64,7 +103,7 @@ def test_upload_document_at_size_limit():
     data = b"%PDF-" + b"%" * (MAX_FILE_SIZE - 5)
     files = {"file": ("limit.pdf", data, "application/pdf")}
     response = client.post("/api/v1/documents/upload", files=files)
-    assert response.status_code == 202
+    assert response.status_code == 200
 
 
 def test_upload_document_under_size_limit():
@@ -72,7 +111,7 @@ def test_upload_document_under_size_limit():
     data = b"%PDF-" + b"%" * 100
     files = {"file": ("small.pdf", data, "application/pdf")}
     response = client.post("/api/v1/documents/upload", files=files)
-    assert response.status_code == 202
+    assert response.status_code == 200
 
 
 def test_upload_document_over_size_limit():
@@ -97,7 +136,7 @@ def test_upload_document_valid_magic_bytes():
     """Un contenido que comienza con %PDF- debe ser aceptado."""
     files = {"file": ("test.pdf", b"%PDF-1.4...", "application/pdf")}
     response = client.post("/api/v1/documents/upload", files=files)
-    assert response.status_code == 202
+    assert response.status_code == 200
 
 
 def test_upload_document_invalid_magic_bytes():

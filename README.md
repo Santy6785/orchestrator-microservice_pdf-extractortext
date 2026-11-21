@@ -88,7 +88,7 @@ curl http://localhost:8000/api/v1/control/health
 ### Document endpoints (`/api/v1/documents`)
 | Method | Path | Description |
 |--------|------|-------------|
-| `POST` | `/upload` | Upload a PDF file; returns a `ProcessingResult` with a generated `document_id` and status `queued`. |
+| `POST` | `/upload` | Upload a PDF file; returns the persisted document with `id`, `checksum`, `extracted_text`, `created_at`, `filename`, `page_count` and `file_size_bytes` (HTTP 200). |
 | `GET`  | `/{document_id}/validate` | Validate cross‑service integrity; returns `{ "valid": true }` on success. |
 
 ### Control endpoints (`/api/v1/control`)

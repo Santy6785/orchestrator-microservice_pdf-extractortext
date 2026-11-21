@@ -76,11 +76,11 @@ def test_nonexistent_document_continues_to_extractor():
             return_value=Response(404, json={"exists": False, "checksum": CHECKSUM})
         )
         respx.post(f"{EXTRACTOR_BASE}/api/v1/extract").mock(
-            return_value=Response(200, json={"status": "ok"})
+            return_value=Response(200, json={"content": "# Texto extraído", "page_count": 3})
         )
         respx.post(
-            f"{PERSISTENCE_BASE}/api/v1/documents/test.pdf"
-        ).mock(return_value=Response(201, json={"id": "doc-456"}))
+            f"{PERSISTENCE_BASE}/api/v1/documents"
+        ).mock(return_value=Response(201, json={"id": "doc-456", "created_at": "2026-01-01T00:00:00"}))
 
         response = client.post(
             "/api/v1/documents/upload",
@@ -89,11 +89,16 @@ def test_nonexistent_document_continues_to_extractor():
 
         # No se produce 409: el chequeo de duplicado no bloquea el flujo.
         assert response.status_code != 409
-        # El endpoint siempre responde 202 con ProcessingResult.
-        assert response.status_code == 202
+        # El endpoint responde 200 con los campos del contrato de upload.
+        assert response.status_code == 200
         body = response.json()
-        assert "document_id" in body
-        assert "status" in body
+        assert "id" in body
+        assert "checksum" in body
+        assert "extracted_text" in body
+        assert "created_at" in body
+        assert "filename" in body
+        assert "page_count" in body
+        assert "file_size_bytes" in body
         # La consulta by-checksum a persistencia fue realizada.
         assert checksum_route.called
 

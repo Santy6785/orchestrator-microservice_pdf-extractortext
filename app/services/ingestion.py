@@ -8,7 +8,7 @@ from fastapi import HTTPException, status
 
 from app.clients.extractor_client import ExtractorClient
 from app.clients.persistence_client import PersistenceClient
-from app.schemas.documents import ProcessingResult
+from app.schemas.documents import DocumentUploadResponse
 from app.schemas.errors import ErrorResponse
 
 logger = logging.getLogger(__name__)
@@ -29,9 +29,9 @@ class IngestionService:
         self.extractor = extractor_client or ExtractorClient()
         self.persistence = persistence_client or PersistenceClient()
 
-    async def process_document(self, payload: dict[str, Any]) -> ProcessingResult:
-        """Kick-off asynchronous processing of a new document.
-        Returns a `ProcessingResult` with status *queued*.
+    async def process_document(self, payload: dict[str, Any]) -> DocumentUploadResponse:
+        """Process a new document upload end‑to‑end.
+        Returns a `DocumentUploadResponse` with the persisted document fields.
         """
         checksum = payload.get("checksum")
         logger.info("Starting processing for document %s", checksum or "unknown")
@@ -123,7 +123,13 @@ class IngestionService:
             )
         except Exception as exc:
             logger.exception("Extractor call failed")
-            return ProcessingResult(document_id="", status="failed", detail=str(exc))
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=ErrorResponse(
+                    code="extractor_error",
+                    message=f"Error communicating with extractor service: {exc}",
+                ).model_dump(),
+            )
 
         # Validate the extractor response contains the expected fields.
         if not isinstance(extraction_result, dict):
@@ -131,10 +137,12 @@ class IngestionService:
                 "Extractor returned invalid response type: %s",
                 type(extraction_result),
             )
-            return ProcessingResult(
-                document_id="",
-                status="failed",
-                detail="Extractor returned an invalid response",
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=ErrorResponse(
+                    code="extractor_error",
+                    message="Extractor returned an invalid response",
+                ).model_dump(),
             )
 
         extracted_text = extraction_result.get("content")
@@ -145,10 +153,12 @@ class IngestionService:
                 "Extractor response missing or invalid 'content' field: %s",
                 extracted_text,
             )
-            return ProcessingResult(
-                document_id="",
-                status="failed",
-                detail="Extractor response missing or invalid 'content'",
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=ErrorResponse(
+                    code="extractor_error",
+                    message="Extractor response missing or invalid 'content'",
+                ).model_dump(),
             )
 
         if not isinstance(page_count, int) or isinstance(page_count, bool) or page_count < 0:
@@ -156,10 +166,12 @@ class IngestionService:
                 "Extractor response missing or invalid 'page_count' field: %s",
                 page_count,
             )
-            return ProcessingResult(
-                document_id="",
-                status="failed",
-                detail="Extractor response missing or invalid 'page_count'",
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=ErrorResponse(
+                    code="extractor_error",
+                    message="Extractor response missing or invalid 'page_count'",
+                ).model_dump(),
             )
 
         # Construir payload independiente para persistencia (sin enviar el binario PDF).
@@ -177,17 +189,25 @@ class IngestionService:
             registration = await self.persistence.register_document(persistence_payload)
         except Exception as exc:
             logger.exception("Persistence registration failed")
-            return ProcessingResult(document_id="", status="failed", detail=str(exc))
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=ErrorResponse(
+                    code="persistence_error",
+                    message=f"Error communicating with persistence service: {exc}",
+                ).model_dump(),
+            )
 
         if not isinstance(registration, dict) or "id" not in registration:
             logger.error(
                 "Persistence service returned invalid registration response: %s",
                 registration,
             )
-            return ProcessingResult(
-                document_id="",
-                status="failed",
-                detail="Invalid response from persistence service",
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=ErrorResponse(
+                    code="persistence_error",
+                    message="Invalid response from persistence service",
+                ).model_dump(),
             )
 
         document_id = registration["id"]
@@ -196,13 +216,37 @@ class IngestionService:
                 "Persistence service returned invalid document id: %s",
                 document_id,
             )
-            return ProcessingResult(
-                document_id="",
-                status="failed",
-                detail="Invalid document id from persistence service",
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=ErrorResponse(
+                    code="persistence_error",
+                    message="Invalid document id from persistence service",
+                ).model_dump(),
             )
 
-        return ProcessingResult(document_id=document_id, status="queued")
+        created_at = registration.get("created_at")
+        if not isinstance(created_at, str) or not created_at:
+            logger.error(
+                "Persistence service returned invalid or missing created_at: %s",
+                created_at,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=ErrorResponse(
+                    code="persistence_error",
+                    message="Persistence service returned missing or invalid created_at",
+                ).model_dump(),
+            )
+
+        return DocumentUploadResponse(
+            id=document_id,
+            checksum=checksum,
+            extracted_text=extracted_text,
+            created_at=created_at,
+            filename=filename,
+            page_count=page_count,
+            file_size_bytes=len(pdf_bytes),
+        )
 
     async def validate_cross_service_integrity(self, document_id: str) -> bool:
         """Validate checksum and duplicate detection across downstream services.

@@ -53,7 +53,7 @@ class MockPersistenceClient:
 
     async def register_document(self, payload: dict[str, Any]) -> Any:
         self.registered_payload = payload
-        return {"id": self.return_id}
+        return {"id": self.return_id, "created_at": "2026-01-01T00:00:00"}
 
 
 class DuplicatePersistence(MockPersistenceClient):
@@ -93,7 +93,7 @@ async def test_ingestion_extrae_filename_y_bytes_desde_payload():
 
     result = await service.process_document(payload)
 
-    assert result.status == "queued"
+    assert result.id == "doc-generado"
     assert len(extractor.calls) == 1
     called_filename, called_bytes = extractor.calls[0]
     assert called_filename == FILENAME
@@ -213,15 +213,20 @@ async def test_ingestion_no_envia_binario_a_persistencia():
 
 @pytest.mark.asyncio
 async def test_ingestion_document_id_proviene_de_persistencia():
-    """El ID de ProcessingResult es el que devuelve persistencia, no el filename."""
+    """El ID de la respuesta es el que devuelve persistencia, no el filename."""
     service, _, _persistence = _make_service()
     payload = _base_payload()
 
     result = await service.process_document(payload)
 
-    assert result.status == "queued"
-    assert result.document_id == "doc-generado"
-    assert result.document_id != FILENAME
+    assert result.id == "doc-generado"
+    assert result.id != FILENAME
+    assert result.checksum == CHECKSUM
+    assert result.filename == FILENAME
+    assert result.extracted_text == "# Documento"
+    assert result.page_count == 5
+    assert result.file_size_bytes == len(VALID_PDF)
+    assert result.created_at == "2026-01-01T00:00:00"
 
 
 @pytest.mark.asyncio
@@ -235,10 +240,9 @@ async def test_ingestion_persistencia_id_vacio_devuelve_failed():
     )
     payload = _base_payload()
 
-    result = await service.process_document(payload)
-
-    assert result.status == "failed"
-    assert result.document_id == ""
+    with pytest.raises(HTTPException) as exc_info:
+        await service.process_document(payload)
+    assert exc_info.value.status_code == 502
 
 
 @pytest.mark.asyncio
@@ -248,7 +252,7 @@ async def test_ingestion_persistencia_id_none_devuelve_failed():
     class PersistenciaIdNone(MockPersistenceClient):
         async def register_document(self, payload: dict[str, Any]) -> Any:
             self.registered_payload = payload
-            return {"id": None}
+            return {"id": None, "created_at": "2026-01-01T00:00:00"}
 
     persistence = PersistenciaIdNone()
     extractor = MockExtractorClient()
@@ -258,10 +262,9 @@ async def test_ingestion_persistencia_id_none_devuelve_failed():
     )
     payload = _base_payload()
 
-    result = await service.process_document(payload)
-
-    assert result.status == "failed"
-    assert result.document_id == ""
+    with pytest.raises(HTTPException) as exc_info:
+        await service.process_document(payload)
+    assert exc_info.value.status_code == 502
 
 
 @pytest.mark.asyncio
@@ -271,7 +274,7 @@ async def test_ingestion_persistencia_respuesta_invalida_devuelve_failed():
     class PersistenciaSinId(MockPersistenceClient):
         async def register_document(self, payload: dict[str, Any]) -> Any:
             self.registered_payload = payload
-            return {"checksum_sha256": "x"}  # sin campo "id"
+            return {"checksum_sha256": "x", "created_at": "2026-01-01T00:00:00"}  # sin campo "id"
 
     persistence = PersistenciaSinId()
     extractor = MockExtractorClient()
@@ -281,10 +284,32 @@ async def test_ingestion_persistencia_respuesta_invalida_devuelve_failed():
     )
     payload = _base_payload()
 
-    result = await service.process_document(payload)
+    with pytest.raises(HTTPException) as exc_info:
+        await service.process_document(payload)
+    assert exc_info.value.status_code == 502
 
-    assert result.status == "failed"
-    assert result.document_id == ""
+
+@pytest.mark.asyncio
+async def test_ingestion_persistencia_creado_at_faltante_devuelve_failed():
+    """Si persistencia no devuelve created_at, el servicio falla sin inventar fecha."""
+
+    class PersistenciaSinCreadoAt(MockPersistenceClient):
+        async def register_document(self, payload: dict[str, Any]) -> Any:
+            self.registered_payload = payload
+            return {"id": "doc-generado"}  # sin campo "created_at"
+
+    persistence = PersistenciaSinCreadoAt()
+    extractor = MockExtractorClient()
+    service = IngestionService(
+        extractor_client=extractor,
+        persistence_client=persistence,
+    )
+    payload = _base_payload()
+
+    with pytest.raises(HTTPException) as exc_info:
+        await service.process_document(payload)
+    assert exc_info.value.status_code == 502
+    assert "created_at" in str(exc_info.value.detail)
 
 
 @pytest.mark.asyncio
@@ -328,9 +353,9 @@ async def test_ingestion_extraer_sin_campos_obligatorios_devuelve_failed():
     )
     payload = _base_payload()
 
-    result = await service.process_document(payload)
-
-    assert result.status == "failed"
+    with pytest.raises(HTTPException) as exc_info:
+        await service.process_document(payload)
+    assert exc_info.value.status_code == 502
     assert persistence.registered_payload is None  # no se registró en persistencia
 
 
@@ -342,24 +367,24 @@ async def test_ingestion_extraer_con_tipos_invalidos_devuelve_failed():
     )
     payload = _base_payload()
 
-    result = await service.process_document(payload)
-
-    assert result.status == "failed"
+    with pytest.raises(HTTPException) as exc_info:
+        await service.process_document(payload)
+    assert exc_info.value.status_code == 502
     assert persistence.registered_payload is None
 
 
 @pytest.mark.asyncio
 async def test_ingestion_error_del_extractor_mantiene_comportamiento_de_error():
-    """Excepción en el extractor -> failed con detalle del error."""
+    """Excepción en el extractor -> HTTP 502 con detalle del error."""
     service, _, persistence = _make_service(
         extractor_exc=RuntimeError("extractor caído")
     )
     payload = _base_payload()
 
-    result = await service.process_document(payload)
-
-    assert result.status == "failed"
-    assert "extractor caído" in result.detail
+    with pytest.raises(HTTPException) as exc_info:
+        await service.process_document(payload)
+    assert exc_info.value.status_code == 502
+    assert "extractor caído" in str(exc_info.value.detail)
     assert persistence.registered_payload is None
 
 
@@ -390,15 +415,15 @@ async def test_ingestion_page_count_bool_devuelve_failed():
     )
     payload = _base_payload()
 
-    result = await service.process_document(payload)
-
-    assert result.status == "failed"
+    with pytest.raises(HTTPException) as exc_info:
+        await service.process_document(payload)
+    assert exc_info.value.status_code == 502
     assert persistence.registered_payload is None
 
 
 @pytest.mark.asyncio
 async def test_ingestion_extractor_http_status_error_devuelve_failed():
-    """ExtractorClient lanza httpx.HTTPStatusError -> failed sin registrar."""
+    """ExtractorClient lanza httpx.HTTPStatusError -> HTTP 502 sin registrar."""
     request = httpx.Request("POST", "http://extractor/api/v1/extract")
     response = httpx.Response(400, request=request)
     exc = httpx.HTTPStatusError("Bad Request", request=request, response=response)
@@ -406,7 +431,7 @@ async def test_ingestion_extractor_http_status_error_devuelve_failed():
     service, _extractor, persistence = _make_service(extractor_exc=exc)
     payload = _base_payload()
 
-    result = await service.process_document(payload)
-
-    assert result.status == "failed"
+    with pytest.raises(HTTPException) as exc_info:
+        await service.process_document(payload)
+    assert exc_info.value.status_code == 502
     assert persistence.registered_payload is None

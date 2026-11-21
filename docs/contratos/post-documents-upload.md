@@ -41,9 +41,24 @@ Devuelve el documento recién creado y persistido con su ID asignado.
   "id": "65f1a2b3c4d5e6f7a8b9c0d1",
   "checksum": "c8ce4e97a404b12b1d8f0e245f04ff607be1048b16d973c2f23bab86655c808b",
   "extracted_text": "Texto completo extraído del documento PDF...",
-  "created_at": "2026-10-19T10:30:00"
+  "created_at": "2026-10-19T10:30:00",
+  "filename": "documento.pdf",
+  "page_count": 16,
+  "file_size_bytes": 1048576
 }
 ```
+
+**Tipos de los campos de respuesta:**
+
+| Campo | Tipo | Descripción |
+|---|---|---|
+| `id` | `string` | Identificador único asignado por el servicio de persistencia. |
+| `checksum` | `string` | Checksum SHA-256 del PDF subido (64 caracteres hexadecimales). |
+| `extracted_text` | `string` | Texto extraído del documento PDF. |
+| `created_at` | `string` | Timestamp de creación del documento en persistencia. |
+| `filename` | `string` | Nombre original del archivo PDF subido. |
+| `page_count` | `integer` | Cantidad de páginas del PDF. |
+| `file_size_bytes` | `integer` | Tamaño del archivo PDF en bytes. |
 
 ---
 

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, File, UploadFile, status
 
 from app.dependencies import get_ingestion_service
-from app.schemas.documents import ProcessingResult
+from app.schemas.documents import DocumentUploadResponse
 from app.schemas.errors import ErrorResponse
 from app.services.ingestion import IngestionService
 from app.services.validation import (
@@ -14,8 +14,8 @@ router = APIRouter(prefix="/documents", tags=["documents"])
 
 @router.post(
     "/upload",
-    response_model=ProcessingResult,
-    status_code=status.HTTP_202_ACCEPTED,
+    response_model=DocumentUploadResponse,
+    status_code=status.HTTP_200_OK,
     responses={
         400: {"model": ErrorResponse},
         409: {"model": ErrorResponse},
@@ -27,9 +27,10 @@ async def upload_document(
     file: UploadFile = File(...),
     ingestion_service: IngestionService = Depends(get_ingestion_service),
 ):
-    """Accept a PDF file via multipart/form-data and start asynchronous processing.
-    The file bytes are read in memory and forwarded to the ingestion service;
-    the response is immediate with a 202 status and a processing result payload.
+    """Accept a PDF file via multipart/form-data and process it.
+    The file bytes are read in memory, forwarded to the ingestion service
+    which extracts text, persists the document and returns the full document
+    record with HTTP 200.
     """
     data = await file.read()
     validate_file_size(data)
