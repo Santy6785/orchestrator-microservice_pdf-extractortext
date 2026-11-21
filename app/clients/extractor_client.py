@@ -13,8 +13,14 @@ class ExtractorClient(BaseClient):
     ``Settings``.
     """
 
-    def __init__(self, service_url: str = settings.extractor_service_url):
-        super().__init__(service_url=service_url, timeout=30.0)
+    def __init__(
+        self,
+        service_url: str = settings.extractor_service_url,
+        timeout: float | None = None,
+    ):
+        if timeout is None:
+            timeout = settings.extractor_timeout_seconds
+        super().__init__(service_url=service_url, timeout=timeout)
 
     async def extract_document(self, filename: str, pdf_bytes: bytes) -> dict[str, Any]:
         """Call the extractor's `/extract` endpoint (POST) using multipart/form-data.

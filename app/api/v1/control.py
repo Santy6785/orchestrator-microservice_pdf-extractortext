@@ -1,9 +1,11 @@
 import asyncio
 from fastapi import APIRouter, Request, status
 from fastapi.responses import JSONResponse
-from app.schemas.errors import ErrorResponse
+
 from app.clients.extractor_client import ExtractorClient
 from app.clients.persistence_client import PersistenceClient
+from app.core.config import settings
+from app.schemas.errors import ErrorResponse
 
 router = APIRouter(prefix="/control", tags=["control"])
 
@@ -17,8 +19,8 @@ async def health(request: Request) -> JSONResponse:
     Returns a JSON object with the orchestrator status and the health of the
     extractor and persistence services.
     """
-    extractor = ExtractorClient()
-    persistence = PersistenceClient()
+    extractor = ExtractorClient(timeout=settings.health_timeout_seconds)
+    persistence = PersistenceClient(timeout=settings.health_timeout_seconds)
     try:
         extractor_resp, persistence_resp = await asyncio.gather(
             extractor.get("/health"), persistence.get("/health/ready")

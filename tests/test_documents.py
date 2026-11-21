@@ -1,9 +1,13 @@
 import hashlib
 
+import httpx
+import respx
 from fastapi.testclient import TestClient
 
+from app.dependencies import get_ingestion_service
 from app.main import app
 from app.schemas.documents import DocumentUploadResponse
+from app.services.ingestion import IngestionService
 from app.services.validation import MAX_FILE_SIZE, compute_sha256_hex
 
 
@@ -30,11 +34,10 @@ class DummyIngestionService:
 # Instancia compartida para poder inspeccionar el payload recibido desde los tests.
 dummy_ingestion_service = DummyIngestionService()
 
-from app.dependencies import get_ingestion_service
-
 app.dependency_overrides[get_ingestion_service] = lambda: dummy_ingestion_service
 
 client = TestClient(app)
+
 
 def test_upload_document():
     files = {"file": ("test.pdf", b"%PDF-1.4...", "application/pdf")}
@@ -91,6 +94,7 @@ def test_upload_document_payload_contains_valid_checksum():
     assert all(c in "0123456789abcdef" for c in checksum)
     assert checksum == checksum.lower()
     assert checksum == compute_sha256_hex(content)
+
 
 def test_validate_document():
     response = client.get("/api/v1/documents/any-id/validate")
@@ -198,3 +202,25 @@ def test_sha256_exact_bytes():
     content = b"%PDF-1.4 exact bytes"
     expected = hashlib.sha256(content).hexdigest()
     assert compute_sha256_hex(content) == expected
+
+
+def test_upload_extractor_readtimeout_devuelve_502_con_detail():
+    """Extractor lanza ReadTimeout en subida de PDF: endpoint responde 502 con detail no vacío y sin URLs internas."""
+    real_service = IngestionService()
+    app.dependency_overrides[get_ingestion_service] = lambda: real_service
+    try:
+        with respx.mock:
+            respx.post("http://extractor/api/v1/extract").mock(
+                side_effect=httpx.ReadTimeout("read timeout")
+            )
+            files = {"file": ("test.pdf", b"%PDF-1.4 test", "application/pdf")}
+            response = client.post("/api/v1/documents/upload", files=files)
+            assert response.status_code == 502
+            body = response.json()
+            assert "detail" in body and body["detail"] != ""
+            # No se filtran URLs internas ni texto de excepción crudo que las contenga.
+            assert "http://extractor" not in str(body)
+    finally:
+        app.dependency_overrides[get_ingestion_service] = lambda: (
+            dummy_ingestion_service
+        )

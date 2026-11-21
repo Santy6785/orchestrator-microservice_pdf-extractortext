@@ -6,7 +6,7 @@ import pytest
 import respx
 from httpx import Response
 
-from app.clients.base import MAX_ATTEMPTS
+from app.clients.base import BACKOFF, MAX_ATTEMPTS
 from app.clients.extractor_client import ExtractorClient
 from app.clients.persistence_client import PersistenceClient
 
@@ -241,3 +241,32 @@ async def test_connect_timeout_retries(mock_sleep):
     assert route.call_count == MAX_ATTEMPTS
     # BACKOFF = (0.2, 0.5, 1.0): espera antes del reintento k es BACKOFF[k-1].
     assert mock_sleep.call_args_list == [call(0.2), call(0.5)]
+
+
+def test_clientes_usan_timeout_de_settings(monkeypatch):
+    """Los clientes toman su timeout de los settings, sin valores fijos en código."""
+    monkeypatch.setenv("EXTRACTOR_SERVICE_URL", "http://extractor")
+    monkeypatch.setenv("PERSISTENCE_SERVICE_URL", "http://persistence:8000")
+    monkeypatch.setenv("EXTRACTOR_TIMEOUT_SECONDS", "45.0")
+    monkeypatch.setenv("PERSISTENCE_TIMEOUT_SECONDS", "7.0")
+    from app.core.config import Settings
+
+    s = Settings()
+    extractor = ExtractorClient(timeout=s.extractor_timeout_seconds)
+    persistence = PersistenceClient(timeout=s.persistence_timeout_seconds)
+    assert extractor.timeout == 45.0
+    assert persistence.timeout == 7.0
+
+
+@respx.mock
+@patch("app.clients.base.asyncio.sleep")
+async def test_persistence_get_readtimeout_reintenta_sin_dormir(mock_sleep):
+    """GET a persistencia con ReadTimeout se reintenta (O-14) sin dormir de verdad."""
+    client = PersistenceClient()
+    route = respx.get("http://persistence:8000/api/v1/documents/by-checksum/abc").mock(
+        side_effect=httpx.ReadTimeout("read timeout")
+    )
+    with pytest.raises(httpx.ReadTimeout):
+        await client.get("/api/v1/documents/by-checksum/abc")
+    assert route.call_count == MAX_ATTEMPTS
+    assert mock_sleep.call_args_list == [call(BACKOFF[0]), call(BACKOFF[1])]

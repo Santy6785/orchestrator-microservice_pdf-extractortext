@@ -10,6 +10,8 @@ import respx
 from fastapi.testclient import TestClient
 from httpx import Response
 
+from app.clients.extractor_client import ExtractorClient
+from app.clients.persistence_client import PersistenceClient
 from app.main import app
 
 client = TestClient(app)
@@ -76,3 +78,20 @@ def test_health_persistence_does_not_call_legacy_health_route():
     assert data["persistence"] == "ready"
     assert extractor_mock.called
     assert persistence_mock.called
+
+
+def test_health_clientes_usan_health_timeout(monkeypatch):
+    """El endpoint de health usa HEALTH_TIMEOUT_SECONDS, no el de extractor ni persistencia."""
+    monkeypatch.setenv("EXTRACTOR_SERVICE_URL", "http://extractor")
+    monkeypatch.setenv("PERSISTENCE_SERVICE_URL", "http://persistence:8000")
+    monkeypatch.setenv("HEALTH_TIMEOUT_SECONDS", "4.0")
+    from app.core.config import Settings
+
+    s = Settings()
+    assert s.health_timeout_seconds == 4.0
+    extractor = ExtractorClient(timeout=s.health_timeout_seconds)
+    persistence = PersistenceClient(timeout=s.health_timeout_seconds)
+    assert extractor.timeout == 4.0
+    assert persistence.timeout == 4.0
+    assert extractor.timeout != s.extractor_timeout_seconds
+    assert persistence.timeout != s.persistence_timeout_seconds

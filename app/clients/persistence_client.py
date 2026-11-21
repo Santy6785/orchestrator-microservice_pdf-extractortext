@@ -13,8 +13,14 @@ class PersistenceClient(BaseClient):
     ``Settings``.
     """
 
-    def __init__(self, service_url: str = settings.persistence_service_url):
-        super().__init__(service_url=service_url)
+    def __init__(
+        self,
+        service_url: str = settings.persistence_service_url,
+        timeout: float | None = None,
+    ):
+        if timeout is None:
+            timeout = settings.persistence_timeout_seconds
+        super().__init__(service_url=service_url, timeout=timeout)
 
     async def register_document(self, payload: dict[str, Any]) -> Any:
         """Create a new document record.

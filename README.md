@@ -82,6 +82,9 @@ curl http://localhost:8000/api/v1/control/health
 | `EXTRACTOR_SERVICE_URL` | Base URL for the PDF extractor service | *required* |
 | `PERSISTENCE_SERVICE_URL` | Base URL for the persistence service | *required* |
 | `LOG_LEVEL` | Logging verbosity (`DEBUG`, `INFO`, `WARNING`, `ERROR`) | `INFO` |
+| `EXTRACTOR_TIMEOUT_SECONDS` | Timeout del cliente Extractor, en segundos | `30.0` |
+| `PERSISTENCE_TIMEOUT_SECONDS` | Timeout del cliente Persistencia, en segundos | `5.0` |
+| `HEALTH_TIMEOUT_SECONDS` | Timeout de los clientes usados por `/control/health`, en segundos | `2.0` |
 
 ## API reference
 

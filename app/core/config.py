@@ -1,3 +1,4 @@
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -13,12 +14,21 @@ class Settings(BaseSettings):
     identifica claramente la variable faltante.
 
     Variables opcionales:
-        LOG_LEVEL              Nivel de logging (default: INFO).
+        LOG_LEVEL                  Nivel de logging (default: INFO).
+        EXTRACTOR_TIMEOUT_SECONDS  Timeout del cliente Extractor, en segundos (default: 30.0).
+        PERSISTENCE_TIMEOUT_SECONDS Timeout del cliente Persistencia, en segundos (default: 5.0).
+        HEALTH_TIMEOUT_SECONDS     Timeout de los clientes usados por /control/health, en segundos (default: 2.0).
+
+    Los timeouts deben ser mayores que 0; un valor inválido hace fallar el
+    arranque con un mensaje que nombra la variable.
     """
 
     extractor_service_url: str
     persistence_service_url: str
     log_level: str = "INFO"
+    extractor_timeout_seconds: float = Field(30.0, gt=0)
+    persistence_timeout_seconds: float = Field(5.0, gt=0)
+    health_timeout_seconds: float = Field(2.0, gt=0)
 
     model_config = SettingsConfigDict(
         env_file=".env",
