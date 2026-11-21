@@ -65,4 +65,21 @@
 - **Consecuencias:**
   - *Positivas:* 100% de comunicación JSON uniforme en el orquestador, eliminación de código muerto.
   - *Negativas:* Clientes hipotéticos de terceros (no presentes en el repositorio) que dependan de `.txt` requerirían actualizar su URL a `/upload` y leer JSON.
+---
+
+## ADR-005: Manejo de fallo de persistencia tras la extracción de texto
+
+- **Estado:** Aceptado
+- **Fecha:** 2026-11-21
+- **Contexto:**
+  El orquestador coordina la extracción de un PDF a través del servicio Extractor y, posteriormente, solicita el registro del documento al servicio de Persistencia. Extractor y Persistencia son servicios independientes, y el orquestador no es responsable de almacenar documentos por su cuenta. Si el extractor responde correctamente pero Persistencia falla al registrar el documento, no debe quedar estado a medias ni informarse al cliente un éxito sin confirmación de persistencia.
+- **Alternativas consideradas:**
+  1. *Propagar el error de Persistencia tal cual al cliente:* Descartado porque el contrato del orquestador para `POST /api/v1/documents/upload` estandariza el uso de HTTP 502 Bad Gateway para fallos de comunicación con servicios downstream tras agotar los reintentos del cliente HTTP.
+  2. *Intentar persistir parcialmente o guardar estado local en el orquestador:* Descartado porque el orquestador no debe mantener estado de persistencia local ni crear registros parciales.
+- **Decisión:**
+  Se adopta que el documento se considera exitosamente procesado y registrado únicamente cuando Persistencia confirma el registro. Si la extracción fue exitosa pero Persistencia falla, el orquestador no devuelve un éxito. Se devuelve un HTTP 502 Bad Gateway, manteniendo el formato de error del proyecto (`ErrorResponse` con campos `code` y `message` dentro de `detail`), y se registra el fallo en los logs. No se implementan mecanismos de rollback o compensación porque el orquestador no debe mantener estado de persistencia local ni crear registros parciales.
+- **Consecuencias:**
+  - *Positivas:* El cliente recibe una respuesta de error y puede saber que el procesamiento no terminó exitosamente; se evita informar un documento como creado cuando no existe confirmación de Persistencia; se mantiene la separación de responsabilidades entre orquestador, extractor y persistencia.
+  - *Negativas:* Una eventual estrategia de recuperación o reintento del cliente queda fuera del alcance de esta decisión; el efecto colateral de que Extractor ya haya procesado el PDF no es deshecho por el orquestador.
+---
 

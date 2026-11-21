@@ -435,3 +435,55 @@ async def test_ingestion_extractor_http_status_error_devuelve_failed():
         await service.process_document(payload)
     assert exc_info.value.status_code == 502
     assert persistence.registered_payload is None
+
+
+class MockPersistenceHttp503(MockPersistenceClient):
+    """Persistencia que simula fallo HTTP 503 al registrar el documento."""
+
+    async def register_document(self, payload: dict[str, Any]) -> Any:
+        self.registered_payload = payload
+        request = httpx.Request("POST", "http://persistence/api/v1/documents")
+        response = httpx.Response(503, request=request)
+        raise httpx.HTTPStatusError(
+            "Service Unavailable", request=request, response=response
+        )
+
+
+@pytest.mark.asyncio
+async def test_ingestion_extractor_ok_persistencia_503_no_documento_creado():
+    """Extractor OK + Persistencia HTTP 503 -> HTTP 502 con detail, sin documento creado."""
+    extractor = MockExtractorClient()
+    persistence = MockPersistenceHttp503()
+    service = IngestionService(
+        extractor_client=extractor,
+        persistence_client=persistence,
+    )
+    payload = _base_payload()
+
+    with pytest.raises(HTTPException) as exc_info:
+        await service.process_document(payload)
+
+    # Extractor fue llamado con el PDF.
+    assert len(extractor.calls) == 1
+    assert extractor.calls[0] == (FILENAME, VALID_PDF)
+
+    # Persistencia fue llamada para registrar el documento (se intentó registrar).
+    assert persistence.registered_payload is not None
+    assert persistence.registered_payload["checksum_sha256"] == CHECKSUM
+    assert persistence.registered_payload["extracted_text"] == "# Documento"
+    assert persistence.registered_payload["page_count"] == 5
+
+    # El orquestador responde con error HTTP 502 o 503.
+    assert exc_info.value.status_code in (502, 503)
+
+    # La respuesta de error contiene el campo detail.
+    detail = exc_info.value.detail
+    assert detail is not None
+    assert isinstance(detail, dict)
+    assert "code" in detail
+    assert "message" in detail
+
+    # No se devuelve un objeto de éxito: la excepción impide el return de DocumentUploadResponse.
+    # El mock de Persistencia lanzó HTTP 503 antes de devolver un id, por lo que el test no
+    # observa un documento creado a partir de la respuesta del mock. El mock no puede verificar
+    # si Persistencia creó un registro internamente antes de fallar.
