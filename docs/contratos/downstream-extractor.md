@@ -23,20 +23,23 @@ Invocado por el Orquestador durante el flujo de subida (`POST /api/v1/documents/
 #### Éxito: HTTP 200 OK
 ```json
 {
-  "checksum": "c8ce4e97a404b12b1d8f0e245f04ff607be1048b16d973c2f23bab86655c808b",
-  "extracted_text": "Texto extraído de todas las páginas del PDF...",
-  "page_count": 3
+  "content": "# Título\n\ntexto en Markdown...",
+  "page_count": 16
 }
 ```
+`Content-Type: application/json`. Campos: `content` (texto extraído en Markdown) y `page_count` (cantidad de páginas procesadas).
 
 #### Errores Mapeables:
-- **HTTP 400 Bad Request:** El archivo recibido no es un PDF válido o está vacío.
-- **HTTP 422 Unprocessable Entity:** PDF corrupto, dañado o con contraseña (`{"detail": "PDF corrupto o no legible: EOF marker not found"}`). El orquestador propaga este mensaje al cliente.
-- **HTTP 500 / 503:** Error interno del extractor. El orquestador aplica política de reintentos con backoff exponencial.
+- **HTTP 400 Bad Request:** El archivo recibido no es un PDF válido o está vacío (`Missing multipart field 'file'`, `Not a PDF (missing %PDF- header)` o `Extraction Failed`).
+- **HTTP 413 Payload Too Large:** El PDF excede el tamaño máximo permitido (`PDF_MAX_FILE_SIZE_MB`).
+- **HTTP 415 Unsupported Media Type:** Content-Type no soportado (debe ser `multipart/form-data`, `application/pdf` o `application/octet-stream`).
+- **HTTP 422 Unprocessable Entity:** PDF corrupto, dañado, no legible o protegido con contraseña.
+- **HTTP 429 Too Many Requests:** Cola de espera llena o timeout de cola superado (`Queue is full` / `Queue timeout`). Incluye header `Retry-After: 1`. **No se reintenta automáticamente desde el Orquestador** (es un error 4xx).
+- **HTTP 500 / 503:** Error interno del extractor.
 
 ### 1.4. Políticas de Red y Resiliencia en el Orquestador
 - **Timeout:** `30.0 segundos` (la extracción de PDFs complejos puede ser costosa).
-- **Retry:** Reintentar hasta 3 veces con backoff exponencial (`0.5s`, `1.0s`, `2.0s`) solo para errores de conexión o HTTP 502/503/504. **Nunca reintentar errores 4xx**.
+- **Retry:** El cliente de HTTP (`BaseClient`) reintenta hasta 3 veces con backoff exponencial (`0.5s`, `1.0s`, `2.0s`) solo para errores de conexión o HTTP 5xx. **Nunca reintentar errores 4xx** (incluyendo 400, 413, 415, 422 y 429).
 
 ---
 

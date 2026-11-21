@@ -114,12 +114,59 @@ class IngestionService:
                     ).model_dump(),
                 )
 
-        # Call extractor (simulated) – fire‑and‑forget
+        # Call extractor to extract text and page count from the PDF.
+        filename = payload.get("filename", "unknown")
+        pdf_bytes = payload.get("content", b"")
+
         try:
-            await self.extractor.extract_document(payload)
+            extraction_result = await self.extractor.extract_document(
+                filename=filename,
+                pdf_bytes=pdf_bytes,
+            )
         except Exception as exc:
-            logger.exception("Extractor call failed: %s", exc)
+            logger.exception("Extractor call failed")
             return ProcessingResult(document_id=document_id, status="failed", detail=str(exc))
+
+        # Validate the extractor response contains the expected fields.
+        if not isinstance(extraction_result, dict):
+            logger.error(
+                "Extractor returned invalid response type: %s",
+                type(extraction_result),
+            )
+            return ProcessingResult(
+                document_id=document_id,
+                status="failed",
+                detail="Extractor returned an invalid response",
+            )
+
+        extracted_text = extraction_result.get("content")
+        page_count = extraction_result.get("page_count")
+
+        if not isinstance(extracted_text, str):
+            logger.error(
+                "Extractor response missing or invalid 'content' field: %s",
+                extracted_text,
+            )
+            return ProcessingResult(
+                document_id=document_id,
+                status="failed",
+                detail="Extractor response missing or invalid 'content'",
+            )
+
+        if not isinstance(page_count, int) or isinstance(page_count, bool):
+            logger.error(
+                "Extractor response missing or invalid 'page_count' field: %s",
+                page_count,
+            )
+            return ProcessingResult(
+                document_id=document_id,
+                status="failed",
+                detail="Extractor response missing or invalid 'page_count'",
+            )
+
+        # Preserve original PDF bytes and checksum; store extracted data for persistence.
+        payload["extracted_text"] = extracted_text
+        payload["page_count"] = page_count
 
         # Register in persistence service
         try:
