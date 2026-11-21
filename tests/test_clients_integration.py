@@ -6,6 +6,7 @@ import pytest
 import respx
 from httpx import Response
 
+from app.clients.base import MAX_ATTEMPTS
 from app.clients.extractor_client import ExtractorClient
 from app.clients.persistence_client import PersistenceClient
 
@@ -200,44 +201,43 @@ async def test_non_retryable_status_single_attempt(status_code):
 @respx.mock
 @patch("app.clients.base.asyncio.sleep")
 @pytest.mark.parametrize("status_code", RETRYABLE_STATUS_CODES)
-async def test_retryable_status_retries(mock_sleep, status_code):
-    """Códigos 502, 503 y 504 se reintentan hasta agotar max_retries con backoff ordenado."""
+async def test_post_never_retries_on_status(mock_sleep, status_code):
+    """POST nunca reintenta por código de estado (502/503/504 incluido): 1 llamada."""
     route = respx.post("http://extractor/api/v1/extract").mock(
         return_value=Response(status_code, json={"detail": "error"})
     )
     client = ExtractorClient()
     with pytest.raises(httpx.HTTPStatusError):
         await client.post("/api/v1/extract", json={"foo": "bar"})
-    assert route.call_count == 3
-    # Backoff exponencial ordenado: 0.5s entre intento 1 y 2, 1.0s entre 2 y 3.
-    assert mock_sleep.call_args_list == [call(0.5), call(1.0)]
+    assert route.call_count == 1
+    mock_sleep.assert_not_called()
 
 
 @respx.mock
 @patch("app.clients.base.asyncio.sleep")
 async def test_connect_error_retries(mock_sleep):
-    """ConnectError se reintenta hasta agotar max_retries con backoff ordenado."""
+    """ConnectError se reintenta hasta agotar MAX_ATTEMPTS con BACKOFF ordenado."""
     route = respx.post("http://extractor/api/v1/extract").mock(
         side_effect=httpx.ConnectError("connection failed")
     )
     client = ExtractorClient()
     with pytest.raises(httpx.ConnectError):
         await client.post("/api/v1/extract", json={"foo": "bar"})
-    assert route.call_count == 3
-    # Backoff exponencial ordenado: 0.5s entre intento 1 y 2, 1.0s entre 2 y 3.
-    assert mock_sleep.call_args_list == [call(0.5), call(1.0)]
+    assert route.call_count == MAX_ATTEMPTS
+    # BACKOFF = (0.2, 0.5, 1.0): espera antes del reintento k es BACKOFF[k-1].
+    assert mock_sleep.call_args_list == [call(0.2), call(0.5)]
 
 
 @respx.mock
 @patch("app.clients.base.asyncio.sleep")
 async def test_connect_timeout_retries(mock_sleep):
-    """ConnectTimeout se reintenta hasta agotar max_retries con backoff ordenado."""
+    """ConnectTimeout se reintenta hasta agotar MAX_ATTEMPTS con BACKOFF ordenado."""
     route = respx.post("http://extractor/api/v1/extract").mock(
         side_effect=httpx.ConnectTimeout("connection timeout")
     )
     client = ExtractorClient()
     with pytest.raises(httpx.ConnectTimeout):
         await client.post("/api/v1/extract", json={"foo": "bar"})
-    assert route.call_count == 3
-    # Backoff exponencial ordenado: 0.5s entre intento 1 y 2, 1.0s entre 2 y 3.
-    assert mock_sleep.call_args_list == [call(0.5), call(1.0)]
+    assert route.call_count == MAX_ATTEMPTS
+    # BACKOFF = (0.2, 0.5, 1.0): espera antes del reintento k es BACKOFF[k-1].
+    assert mock_sleep.call_args_list == [call(0.2), call(0.5)]

@@ -21,7 +21,7 @@ async def health(request: Request) -> JSONResponse:
     persistence = PersistenceClient()
     try:
         extractor_resp, persistence_resp = await asyncio.gather(
-            extractor.get("/health"), persistence.get("/health")
+            extractor.get("/health"), persistence.get("/health/ready")
         )
         # Extract status field if JSON contains it
         extractor_health = extractor_resp.get("status") if isinstance(extractor_resp, dict) else extractor_resp
