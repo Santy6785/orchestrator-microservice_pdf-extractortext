@@ -36,7 +36,10 @@ class BaseClient:
                 if "application/json" in response.headers.get("content-type", ""):
                     return response.json()
                 return response.text
-            except (httpx.HTTPError, httpx.ConnectTimeout) as exc:
+            except httpx.HTTPStatusError as exc:
+                # Solo reintentar errores 502, 503, 504; no reintentar 4xx ni otros 5xx.
+                if exc.response.status_code not in (502, 503, 504):
+                    raise
                 logger.warning(
                     "%s request to %s failed on attempt %d/%d: %s",
                     method,
@@ -48,6 +51,21 @@ class BaseClient:
                 if attempt == self.max_retries:
                     raise
                 await asyncio.sleep(self.backoff_factor * (2 ** (attempt - 1)))
+            except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
+                logger.warning(
+                    "%s request to %s failed on attempt %d/%d: %s",
+                    method,
+                    url,
+                    attempt,
+                    self.max_retries,
+                    exc,
+                )
+                if attempt == self.max_retries:
+                    raise
+                await asyncio.sleep(self.backoff_factor * (2 ** (attempt - 1)))
+            except httpx.HTTPError:
+                # Otros errores de HTTP no se reintentan.
+                raise
 
     async def get(self, path: str, **kwargs) -> Any:
         return await self._request("GET", path, **kwargs)
