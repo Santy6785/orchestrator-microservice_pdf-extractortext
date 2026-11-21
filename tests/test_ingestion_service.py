@@ -41,9 +41,9 @@ class MockExtractorClient:
 class MockPersistenceClient:
     """Doble de prueba que captura llamadas a persistencia sin red real."""
 
-    def __init__(self) -> None:
+    def __init__(self, return_id: str = "doc-generado") -> None:
         self.registered_payload: dict[str, Any] | None = None
-        self.registered_document_id: str | None = None
+        self.return_id = return_id
 
     async def check_duplicate_by_checksum(self, checksum: str) -> Any:
         # Simula HTTP 404: no hay duplicado, el flujo continúa.
@@ -51,10 +51,9 @@ class MockPersistenceClient:
         response = httpx.Response(404, request=request)
         raise httpx.HTTPStatusError("not found", request=request, response=response)
 
-    async def register_document(self, document_id: str, payload: dict[str, Any]) -> Any:
-        self.registered_document_id = document_id
+    async def register_document(self, payload: dict[str, Any]) -> Any:
         self.registered_payload = payload
-        return {"id": document_id}
+        return {"id": self.return_id}
 
 
 class DuplicatePersistence(MockPersistenceClient):
@@ -78,7 +77,12 @@ def _make_service(
 
 
 def _base_payload() -> dict[str, Any]:
-    return {"filename": FILENAME, "content": VALID_PDF, "checksum": CHECKSUM}
+    return {
+        "filename": FILENAME,
+        "content": VALID_PDF,
+        "checksum": CHECKSUM,
+        "metadata": {"source": "test"},
+    }
 
 
 @pytest.mark.asyncio
@@ -110,6 +114,180 @@ async def test_ingestion_interpreta_respuesta_exitosa():
 
 
 @pytest.mark.asyncio
+async def test_ingestion_envia_checksum_sha256_a_persistencia():
+    """El campo enviado a persistencia usa el nombre checksum_sha256."""
+    service, _, persistence = _make_service()
+    payload = _base_payload()
+
+    await service.process_document(payload)
+
+    assert persistence.registered_payload is not None
+    assert persistence.registered_payload["checksum_sha256"] == CHECKSUM
+    assert "checksum" not in persistence.registered_payload
+
+
+@pytest.mark.asyncio
+async def test_ingestion_envia_filename_a_persistencia():
+    """El nombre original del archivo se conserva en el payload de persistencia."""
+    service, _, persistence = _make_service()
+    payload = _base_payload()
+
+    await service.process_document(payload)
+
+    assert persistence.registered_payload is not None
+    assert persistence.registered_payload["filename"] == FILENAME
+
+
+@pytest.mark.asyncio
+async def test_ingestion_envia_texto_extraido_a_persistencia():
+    """El texto extraído se envía correctamente a persistencia."""
+    service, _, persistence = _make_service()
+    payload = _base_payload()
+
+    await service.process_document(payload)
+
+    assert persistence.registered_payload is not None
+    assert persistence.registered_payload["extracted_text"] == "# Documento"
+
+
+@pytest.mark.asyncio
+async def test_ingestion_envia_page_count_a_persistencia():
+    """La cantidad de páginas se envía correctamente a persistencia."""
+    service, _, persistence = _make_service()
+    payload = _base_payload()
+
+    await service.process_document(payload)
+
+    assert persistence.registered_payload is not None
+    assert persistence.registered_payload["page_count"] == 5
+
+
+@pytest.mark.asyncio
+async def test_ingestion_envia_file_size_bytes_a_persistencia():
+    """file_size_bytes coincide con la longitud de los bytes originales."""
+    service, _, persistence = _make_service()
+    payload = _base_payload()
+
+    await service.process_document(payload)
+
+    assert persistence.registered_payload is not None
+    assert persistence.registered_payload["file_size_bytes"] == len(VALID_PDF)
+
+
+@pytest.mark.asyncio
+async def test_ingestion_envia_metadata_a_persistencia():
+    """Los metadatos se conservan en el payload de persistencia."""
+    service, _, persistence = _make_service()
+    payload = _base_payload()
+
+    await service.process_document(payload)
+
+    assert persistence.registered_payload is not None
+    assert persistence.registered_payload["metadata"] == {"source": "test"}
+
+
+@pytest.mark.asyncio
+async def test_ingestion_metadata_vacio_por_defecto():
+    """Si no hay metadatos, se envía un diccionario vacío."""
+    service, _, persistence = _make_service()
+    payload = {"filename": FILENAME, "content": VALID_PDF, "checksum": CHECKSUM}
+
+    await service.process_document(payload)
+
+    assert persistence.registered_payload is not None
+    assert persistence.registered_payload["metadata"] == {}
+
+
+@pytest.mark.asyncio
+async def test_ingestion_no_envia_binario_a_persistencia():
+    """El binario original del PDF no se envía en el JSON a persistencia."""
+    service, _, persistence = _make_service()
+    payload = _base_payload()
+
+    await service.process_document(payload)
+
+    assert persistence.registered_payload is not None
+    assert "content" not in persistence.registered_payload
+    assert "file" not in persistence.registered_payload
+
+
+@pytest.mark.asyncio
+async def test_ingestion_document_id_proviene_de_persistencia():
+    """El ID de ProcessingResult es el que devuelve persistencia, no el filename."""
+    service, _, _persistence = _make_service()
+    payload = _base_payload()
+
+    result = await service.process_document(payload)
+
+    assert result.status == "queued"
+    assert result.document_id == "doc-generado"
+    assert result.document_id != FILENAME
+
+
+@pytest.mark.asyncio
+async def test_ingestion_persistencia_id_vacio_devuelve_failed():
+    """Si persistencia devuelve un ID vacío, el servicio falla y no informa éxito."""
+    persistence = MockPersistenceClient(return_id="")
+    extractor = MockExtractorClient()
+    service = IngestionService(
+        extractor_client=extractor,
+        persistence_client=persistence,
+    )
+    payload = _base_payload()
+
+    result = await service.process_document(payload)
+
+    assert result.status == "failed"
+    assert result.document_id == ""
+
+
+@pytest.mark.asyncio
+async def test_ingestion_persistencia_id_none_devuelve_failed():
+    """Si persistencia devuelve id=None, el servicio falla y no informa éxito."""
+
+    class PersistenciaIdNone(MockPersistenceClient):
+        async def register_document(self, payload: dict[str, Any]) -> Any:
+            self.registered_payload = payload
+            return {"id": None}
+
+    persistence = PersistenciaIdNone()
+    extractor = MockExtractorClient()
+    service = IngestionService(
+        extractor_client=extractor,
+        persistence_client=persistence,
+    )
+    payload = _base_payload()
+
+    result = await service.process_document(payload)
+
+    assert result.status == "failed"
+    assert result.document_id == ""
+
+
+@pytest.mark.asyncio
+async def test_ingestion_persistencia_respuesta_invalida_devuelve_failed():
+    """Si persistencia devuelve una respuesta sin id, el servicio falla sin inventar ID."""
+
+    class PersistenciaSinId(MockPersistenceClient):
+        async def register_document(self, payload: dict[str, Any]) -> Any:
+            self.registered_payload = payload
+            return {"checksum_sha256": "x"}  # sin campo "id"
+
+    persistence = PersistenciaSinId()
+    extractor = MockExtractorClient()
+    service = IngestionService(
+        extractor_client=extractor,
+        persistence_client=persistence,
+    )
+    payload = _base_payload()
+
+    result = await service.process_document(payload)
+
+    assert result.status == "failed"
+    assert result.document_id == ""
+
+
+@pytest.mark.asyncio
 async def test_ingestion_conserva_bytes_originales_en_payload():
     """payload['content'] conserva los bytes del PDF; no se sobrescribe."""
     service, _, _ = _make_service()
@@ -122,18 +300,24 @@ async def test_ingestion_conserva_bytes_originales_en_payload():
 
 @pytest.mark.asyncio
 async def test_ingestion_guarda_extraido_en_nuevas_claves():
-    """extracted_text y page_count se agregan al payload sin perder contenido previo."""
+    """extracted_text y page_count se agregan al payload de persistencia sin perder contenido previo."""
     service, _, persistence = _make_service()
     payload = _base_payload()
 
     await service.process_document(payload)
 
-    assert payload["filename"] == FILENAME
-    assert payload["checksum"] == CHECKSUM
-    assert payload["content"] == VALID_PDF
-    assert payload["extracted_text"] == "# Documento"
-    assert payload["page_count"] == 5
-    assert persistence.registered_payload is payload
+    assert persistence.registered_payload is not None
+    assert persistence.registered_payload["filename"] == FILENAME
+    assert persistence.registered_payload["checksum_sha256"] == CHECKSUM
+    assert persistence.registered_payload["extracted_text"] == "# Documento"
+    assert persistence.registered_payload["page_count"] == 5
+    assert persistence.registered_payload["file_size_bytes"] == len(VALID_PDF)
+    assert persistence.registered_payload["metadata"] == {"source": "test"}
+    # El payload original no se modifica con campos de persistencia.
+    assert "extracted_text" not in payload
+    assert "page_count" not in payload
+    # El payload de persistencia es un diccionario independiente del original.
+    assert persistence.registered_payload is not payload
 
 
 @pytest.mark.asyncio

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from typing import Any, Dict
 import logging
+from typing import Any
 
 import httpx
 from fastapi import HTTPException, status
@@ -29,13 +29,12 @@ class IngestionService:
         self.extractor = extractor_client or ExtractorClient()
         self.persistence = persistence_client or PersistenceClient()
 
-    async def process_document(self, payload: Dict[str, Any]) -> ProcessingResult:
+    async def process_document(self, payload: dict[str, Any]) -> ProcessingResult:
         """Kick-off asynchronous processing of a new document.
         Returns a `ProcessingResult` with status *queued*.
         """
-        document_id = payload.get("filename", "unknown")  # placeholder ID generation
         checksum = payload.get("checksum")
-        logger.info("Starting processing for document %s", document_id)
+        logger.info("Starting processing for document %s", checksum or "unknown")
 
         # Fail-fast duplicate check against persistence before invoking the extractor.
         if checksum:
@@ -71,11 +70,10 @@ class IngestionService:
                         message="Error communicating with persistence service",
                     ).model_dump(),
                 )
-            except Exception as exc:
+            except Exception:
                 logger.exception(
-                    "Unexpected error checking duplicate for checksum %s: %s",
+                    "Unexpected error checking duplicate for checksum %s",
                     checksum,
-                    exc,
                 )
                 raise HTTPException(
                     status_code=status.HTTP_502_BAD_GATEWAY,
@@ -125,7 +123,7 @@ class IngestionService:
             )
         except Exception as exc:
             logger.exception("Extractor call failed")
-            return ProcessingResult(document_id=document_id, status="failed", detail=str(exc))
+            return ProcessingResult(document_id="", status="failed", detail=str(exc))
 
         # Validate the extractor response contains the expected fields.
         if not isinstance(extraction_result, dict):
@@ -134,7 +132,7 @@ class IngestionService:
                 type(extraction_result),
             )
             return ProcessingResult(
-                document_id=document_id,
+                document_id="",
                 status="failed",
                 detail="Extractor returned an invalid response",
             )
@@ -148,32 +146,61 @@ class IngestionService:
                 extracted_text,
             )
             return ProcessingResult(
-                document_id=document_id,
+                document_id="",
                 status="failed",
                 detail="Extractor response missing or invalid 'content'",
             )
 
-        if not isinstance(page_count, int) or isinstance(page_count, bool):
+        if not isinstance(page_count, int) or isinstance(page_count, bool) or page_count < 0:
             logger.error(
                 "Extractor response missing or invalid 'page_count' field: %s",
                 page_count,
             )
             return ProcessingResult(
-                document_id=document_id,
+                document_id="",
                 status="failed",
                 detail="Extractor response missing or invalid 'page_count'",
             )
 
-        # Preserve original PDF bytes and checksum; store extracted data for persistence.
-        payload["extracted_text"] = extracted_text
-        payload["page_count"] = page_count
+        # Construir payload independiente para persistencia (sin enviar el binario PDF).
+        persistence_payload = {
+            "checksum_sha256": payload.get("checksum"),
+            "filename": filename,
+            "extracted_text": extracted_text,
+            "page_count": page_count,
+            "file_size_bytes": len(pdf_bytes),
+            "metadata": payload.get("metadata", {}),
+        }
 
         # Register in persistence service
         try:
-            await self.persistence.register_document(document_id, payload)
+            registration = await self.persistence.register_document(persistence_payload)
         except Exception as exc:
-            logger.exception("Persistence registration failed: %s", exc)
-            return ProcessingResult(document_id=document_id, status="failed", detail=str(exc))
+            logger.exception("Persistence registration failed")
+            return ProcessingResult(document_id="", status="failed", detail=str(exc))
+
+        if not isinstance(registration, dict) or "id" not in registration:
+            logger.error(
+                "Persistence service returned invalid registration response: %s",
+                registration,
+            )
+            return ProcessingResult(
+                document_id="",
+                status="failed",
+                detail="Invalid response from persistence service",
+            )
+
+        document_id = registration["id"]
+        if not isinstance(document_id, str) or not document_id:
+            logger.error(
+                "Persistence service returned invalid document id: %s",
+                document_id,
+            )
+            return ProcessingResult(
+                document_id="",
+                status="failed",
+                detail="Invalid document id from persistence service",
+            )
 
         return ProcessingResult(document_id=document_id, status="queued")
 
@@ -185,6 +212,6 @@ class IngestionService:
             # In a real implementation we would call both services; here we
             # simply ask the persistence service for a validation endpoint.
             return await self.persistence.validate_document(document_id)
-        except Exception as exc:
-            logger.exception("Integrity validation failed: %s", exc)
+        except Exception:
+            logger.exception("Integrity validation failed")
             return False

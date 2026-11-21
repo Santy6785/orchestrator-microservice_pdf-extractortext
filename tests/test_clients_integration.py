@@ -1,3 +1,4 @@
+import json
 from unittest.mock import call, patch
 
 import httpx
@@ -102,13 +103,69 @@ async def test_extractor_client_no_envia_json_cuerpo():
 
 @respx.mock
 async def test_persistence_client_llama_url_configurada():
-    route = respx.post("http://persistence:8000/api/v1/documents/abc").mock(
-        return_value=Response(201, json={"id": "abc"})
+    route = respx.post("http://persistence:8000/api/v1/documents").mock(
+        return_value=Response(201, json={"id": "doc-123"})
     )
     client = PersistenceClient()
-    resultado = await client.register_document("abc", {"checksum": "x"})
+    resultado = await client.register_document({"checksum_sha256": "x"})
     assert route.called
-    assert resultado == {"id": "abc"}
+    assert resultado == {"id": "doc-123"}
+
+
+@respx.mock
+async def test_persistence_client_register_document():
+    route = respx.post("http://persistence:8000/api/v1/documents").mock(
+        return_value=Response(
+            201,
+            json={
+                "id": "65f1a2b3c4d5e6f7a8b9c0d1",
+                "checksum_sha256": "a" * 64,
+                "filename": "documento.pdf",
+                "extracted_text": "# Documento de prueba",
+                "page_count": 3,
+                "file_size_bytes": 1024,
+                "metadata": {"source": "test"},
+                "created_at": "2026-10-19T10:30:00",
+                "updated_at": "2026-10-19T10:30:00",
+            },
+        )
+    )
+    client = PersistenceClient()
+    payload = {
+        "checksum_sha256": "a" * 64,
+        "filename": "documento.pdf",
+        "extracted_text": "# Documento de prueba",
+        "page_count": 3,
+        "file_size_bytes": 1024,
+        "metadata": {"source": "test"},
+    }
+    resultado = await client.register_document(payload)
+
+    # 1. La petición fue ejecutada.
+    assert route.called
+    # 2. El método HTTP es POST.
+    assert route.calls[0].request.method == "POST"
+    # 3. La URL es exactamente /api/v1/documents.
+    assert route.calls[0].request.url.path == "/api/v1/documents"
+    # 4. La URL no contiene ningún ID.
+    assert "/documents/" not in str(route.calls[0].request.url)
+    # 5. El cuerpo JSON coincide exactamente con el payload esperado.
+    body = json.loads(route.calls[0].request.content)
+    assert body == payload
+    # 6. No se envían campos adicionales.
+    assert set(body.keys()) == {
+        "checksum_sha256",
+        "filename",
+        "extracted_text",
+        "page_count",
+        "file_size_bytes",
+        "metadata",
+    }
+    # 7. El cliente devuelve correctamente el JSON de respuesta.
+    assert isinstance(resultado, dict)
+    # 8. El ID devuelto coincide con el generado por persistencia.
+    assert resultado["id"] == "65f1a2b3c4d5e6f7a8b9c0d1"
+    assert resultado["checksum_sha256"] == "a" * 64
 
 
 @respx.mock
