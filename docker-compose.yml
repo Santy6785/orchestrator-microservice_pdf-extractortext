@@ -1,4 +1,4 @@
-version: '3.9'
+﻿version: '3.9'
 services:
   orchestrator:
     build: .
@@ -6,12 +6,28 @@ services:
     environment:
       - EXTRACTOR_SERVICE_URL=http://extractor
       - PERSISTENCE_SERVICE_URL=http://persistence:8000
-    ports:
-      - "8000:8000"
-    # Optional: add healthcheck if needed
+    expose:
+      - "8000"
+    networks:
+      - shared_network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.orchestrator.rule=Host(`universidad.localhost`) && PathPrefix(`/api`)"
+      - "traefik.http.routers.orchestrator.entrypoints=https"
+      - "traefik.http.routers.orchestrator.tls=true"
+      - "traefik.http.routers.orchestrator.priority=20"
+      - "traefik.http.services.orchestrator.loadbalancer.server.port=8000"
+      - "traefik.http.services.orchestrator.loadbalancer.healthcheck.path=/api/v1/control/health"
+      - "traefik.http.services.orchestrator.loadbalancer.healthcheck.interval=10s"
+      - "traefik.http.services.orchestrator.loadbalancer.healthcheck.timeout=3s"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/control/health', timeout=8)"]
       interval: 30s
       timeout: 10s
       start_period: 15s
       retries: 3
+
+networks:
+  shared_network:
+    external: true
+    name: ${DOCKER_NETWORK_NAME:-pdf-extractortext_pdf-network}
