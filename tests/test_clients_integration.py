@@ -6,6 +6,7 @@ import pytest
 import respx
 from httpx import Response
 
+from app.clients.base import BaseClient
 from app.clients.extractor_client import ExtractorClient
 from app.clients.persistence_client import PersistenceClient
 
@@ -241,3 +242,94 @@ async def test_connect_timeout_retries(mock_sleep):
     assert route.call_count == 3
     # Backoff exponencial ordenado: 0.5s entre intento 1 y 2, 1.0s entre 2 y 3.
     assert mock_sleep.call_args_list == [call(0.5), call(1.0)]
+
+
+# --- Tests de manejo de respuestas HTTP vacías en BaseClient ---
+
+
+@respx.mock
+async def test_base_client_request_204_json_content_type_empty_body():
+    """HTTP 204 con Content-Type application/json y body vacío no provoca JSONDecodeError."""
+    client = BaseClient(service_url="http://test")
+    route = respx.get("http://test/api/v1/resource").mock(
+        return_value=Response(204, headers={"content-type": "application/json"})
+    )
+    resultado = await client._request("GET", "/api/v1/resource")
+    assert route.called
+    assert resultado == ""
+
+
+@respx.mock
+async def test_base_client_request_200_json_content_type_empty_body():
+    """HTTP 200 con Content-Type application/json y body vacío no provoca JSONDecodeError."""
+    client = BaseClient(service_url="http://test")
+    route = respx.post("http://test/api/v1/resource").mock(
+        return_value=Response(200, content=b"", headers={"content-type": "application/json"})
+    )
+    resultado = await client._request("POST", "/api/v1/resource", json={"foo": "bar"})
+    assert route.called
+    assert resultado == ""
+
+
+@respx.mock
+async def test_base_client_request_200_valid_json_still_deserializes():
+    """HTTP 200 con JSON válido sigue deserializándose normalmente."""
+    client = BaseClient(service_url="http://test")
+    route = respx.post("http://test/api/v1/resource").mock(
+        return_value=Response(200, json={"id": "doc-1", "status": "ok"})
+    )
+    resultado = await client._request("POST", "/api/v1/resource", json={"foo": "bar"})
+    assert route.called
+    assert resultado == {"id": "doc-1", "status": "ok"}
+
+
+@respx.mock
+async def test_base_client_request_200_plain_text_returns_text():
+    """HTTP 200 con texto plano se devuelve como texto."""
+    client = BaseClient(service_url="http://test")
+    route = respx.get("http://test/api/v1/resource").mock(
+        return_value=Response(200, text="texto plano", headers={"content-type": "text/plain"})
+    )
+    resultado = await client._request("GET", "/api/v1/resource")
+    assert route.called
+    assert resultado == "texto plano"
+
+
+@respx.mock
+async def test_base_client_request_204_no_content_type_returns_empty_text():
+    """HTTP 204 sin Content-Type se devuelve como texto vacío."""
+    client = BaseClient(service_url="http://test")
+    route = respx.delete("http://test/api/v1/resource").mock(
+        return_value=Response(204)
+    )
+    resultado = await client._request("DELETE", "/api/v1/resource")
+    assert route.called
+    assert resultado == ""
+
+
+@respx.mock
+@patch("app.clients.base.asyncio.sleep")
+async def test_base_client_empty_json_body_not_retried(mock_sleep):
+    """Body JSON vacío no se reintenta: exactamente un intento."""
+    client = BaseClient(service_url="http://test")
+    route = respx.post("http://test/api/v1/resource").mock(
+        return_value=Response(200, content=b"", headers={"content-type": "application/json"})
+    )
+    resultado = await client._request("POST", "/api/v1/resource", json={"foo": "bar"})
+    assert route.called
+    assert resultado == ""
+    assert route.call_count == 1
+    mock_sleep.assert_not_called()
+
+
+@respx.mock
+async def test_persistence_client_delete_document_204_json_content_type():
+    """PersistenceClient.delete_document con 204 + Content-Type JSON devuelve texto vacío."""
+    document_id = "doc-123"
+    route = respx.delete(f"http://persistence:8000/api/v1/documents/{document_id}").mock(
+        return_value=Response(204, headers={"content-type": "application/json"})
+    )
+    client = PersistenceClient()
+    resultado = await client.delete_document(document_id)
+    assert route.called
+    assert resultado == ""

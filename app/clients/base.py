@@ -33,7 +33,8 @@ class BaseClient:
             try:
                 response = await self._client.request(method, url, headers=headers, **kwargs)
                 response.raise_for_status()
-                if "application/json" in response.headers.get("content-type", ""):
+                content_type = response.headers.get("content-type", "")
+                if "application/json" in content_type and response.content:
                     return response.json()
                 return response.text
             except httpx.HTTPStatusError as exc:
