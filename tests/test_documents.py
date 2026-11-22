@@ -1,5 +1,6 @@
 import hashlib
 
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from app.main import app
@@ -25,6 +26,24 @@ class DummyIngestionService:
 
     async def validate_cross_service_integrity(self, document_id: str) -> bool:
         return True
+
+    async def get_document(self, document_id: str):
+        """Doble de prueba para get_document.
+        Retorna un documento válido salvo que se pida el UUID de no-encontrado.
+        """
+        if document_id == "00000000-0000-0000-0000-000000000000":
+            raise HTTPException(
+                status_code=404,
+                detail=f"Documento con ID {document_id} no encontrado",
+            )
+        return {
+            "id": document_id,
+            "checksum": (
+                "c8ce4e97a404b12b1d8f0e245f04ff607be1048b16d973c2f23bab86655c808b"
+            ),
+            "extracted_text": "# texto extraído de prueba",
+            "created_at": "2026-01-01T00:00:00",
+        }
 
 
 # Instancia compartida para poder inspeccionar el payload recibido desde los tests.
@@ -198,3 +217,38 @@ def test_sha256_exact_bytes():
     content = b"%PDF-1.4 exact bytes"
     expected = hashlib.sha256(content).hexdigest()
     assert compute_sha256_hex(content) == expected
+
+
+# ---------------------------------------------------------------------------
+# Pruebas para GET /api/v1/documents/{document_id} (issue O-11)
+# ---------------------------------------------------------------------------
+
+VALID_UUID = "65f1a2b3-c4d5-e6f7-a8b9-c0d1e2f3a4b5"
+NOT_FOUND_UUID = "00000000-0000-0000-0000-000000000000"
+
+
+def test_get_document_valid_uuid_returns_200():
+    """O-11: UUID válido y documento existente -> HTTP 200 con los 4 campos."""
+    response = client.get(f"/api/v1/documents/{VALID_UUID}")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["id"] == VALID_UUID
+    assert data["checksum"] == (
+        "c8ce4e97a404b12b1d8f0e245f04ff607be1048b16d973c2f23bab86655c808b"
+    )
+    assert data["extracted_text"] == "# texto extraído de prueba"
+    assert data["created_at"] == "2026-01-01T00:00:00"
+
+
+def test_get_document_invalid_uuid_returns_422():
+    """O-11: ID que no es un UUID válido -> HTTP 422."""
+    response = client.get("/api/v1/documents/no-es-un-uuid-valido")
+    assert response.status_code == 422
+
+
+def test_get_document_not_found_returns_404():
+    """O-11: UUID válido pero documento inexistente -> HTTP 404 con detail."""
+    response = client.get(f"/api/v1/documents/{NOT_FOUND_UUID}")
+    assert response.status_code == 404
+    body = response.json()
+    assert "detail" in body

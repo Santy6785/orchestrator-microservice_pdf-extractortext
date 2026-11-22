@@ -1,3 +1,5 @@
+import uuid
+
 from fastapi import APIRouter, Body, Depends, File, Path, Query, UploadFile, status
 
 from app.dependencies import get_ingestion_service
@@ -93,19 +95,20 @@ async def list_documents(
     status_code=status.HTTP_200_OK,
     responses={
         404: {"model": ErrorResponse},
+        422: {"model": ErrorResponse},
         502: {"model": ErrorResponse},
         503: {"model": ErrorResponse},
     },
 )
 async def get_document(
-    document_id: str = Path(..., description="ID único del documento"),
+    document_id: uuid.UUID = Path(..., description="ID único del documento (UUID)"),
     ingestion_service: IngestionService = Depends(get_ingestion_service),
 ):
     """Obtiene un documento por su ID.
     Delegata en IngestionService.get_document, que a su vez llama a
     PersistenceClient.GET /api/v1/documents/{document_id}.
     """
-    return await ingestion_service.get_document(document_id)
+    return await ingestion_service.get_document(str(document_id))
 
 
 @router.put(

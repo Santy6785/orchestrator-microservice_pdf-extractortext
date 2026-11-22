@@ -18,7 +18,7 @@
 ### 2.2. Parámetros de Ruta
 | Parámetro | Tipo | Requerido | Descripción |
 |---|---|---|---|
-| `document_id` | `string` | Sí | Identificador alfanumérico único del documento (ej. ObjectId de MongoDB). |
+| `document_id` | `string` (UUID v4) | Sí | Identificador único del documento en formato UUID v4. Un ID con formato inválido produce HTTP 422 Unprocessable Entity. |
 
 ### 2.3. Request Body
 *No aplica.*
@@ -51,6 +51,7 @@ Devuelve el documento completo.
 | Código HTTP | Causa | Formato JSON de Error |
 |---|---|---|
 | **404 Not Found** | El ID indicado no corresponde a ningún documento existente. | `{"detail": "Documento con ID 65f1a2b3c4d5e6f7a8b9c0d1 no encontrado"}` |
+| **422 Unprocessable Entity** | El ID recibido no tiene formato UUID v4 válido. | `{"detail": [...]}` (error de validación de FastAPI) |
 | **502 Bad Gateway** | Error al consultar el microservicio de persistencia. | `{"detail": "Error de comunicación con el servicio de persistencia"}` |
 | **503 Service Unavailable** | Orquestador en estado pausado. | `{"detail": "Servicio temporalmente pausado"}` |
 
