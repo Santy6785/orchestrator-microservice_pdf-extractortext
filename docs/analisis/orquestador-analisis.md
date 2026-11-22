@@ -148,12 +148,10 @@
 - **Evidencia:**
   Solo existen endpoints de prueba:
   - `POST /documents/` (devuelve `status.HTTP_202_ACCEPTED` con payload estático `{"example": "payload"}`).
-  - `GET /documents/{document_id}/validate` (devuelve `{"valid": True}`).
   No existen las rutas que el frontend consume:
   - `POST /api/v1/documents/upload`
   - `GET /api/v1/documents/` (con paginación `skip` y `limit`)
   - `GET /api/v1/documents/{document_id}`
-  - `PUT /api/v1/documents/{document_id}`
   - `DELETE /api/v1/documents/{document_id}`
   - `GET /health`, `/shutdown`, `/pause`, `/resume`, `/metrics`
 - **Cambio Propuesto:** Implementar los controladores en 3 capas respetando estrictamente los prefijos y rutas del monolito (`/api/v1/documents/...`) para garantizar transparencia total frente al frontend.
@@ -292,7 +290,7 @@ flowchart TD
    - *Acción:* `RequestIDMiddleware`, `StructuredLoggingMiddleware` (sin datos sensibles ni binarios), `ServerLifecycleManager` (gestión de pausa, reanudación y peticiones activas).
 6. **Tarea 6 [CRITICAL] - Controladores de API (`app/api/`):**
    - *Dependencias:* Tareas 4 y 5.
-   - *Acción:* Implementar rutas `POST /api/v1/documents/upload`, `GET /api/v1/documents/`, `GET /api/v1/documents/{id}`, `PUT /api/v1/documents/{id}`, `DELETE /api/v1/documents/{id}`.
+   - *Acción:* Implementar rutas `POST /api/v1/documents/upload`, `GET /api/v1/documents/`, `GET /api/v1/documents/{id}`, `DELETE /api/v1/documents/{id}`.
 7. **Tarea 7 [HIGH] - Endpoints de Salud y Operación (`/health`, `/metrics`, `/shutdown`, `/pause`, `/resume`):**
    - *Dependencias:* Tarea 5 y 6.
    - *Acción:* `/health` que consulte la disponibilidad de `extractor` y `persistencia`; `/shutdown` seguro con drenado de peticiones; `/pause` y `/resume` para control de tráfico; `/metrics` con contadores.

@@ -24,13 +24,6 @@ class PersistenceClient(BaseClient):
         """
         return await self.post("/api/v1/documents", json=payload)
 
-    async def validate_document(self, document_id: str) -> bool:
-        """Validate checksum/duplicate status.
-        Calls ``GET /api/v1/documents/{document_id}/validate``.
-        """
-        result = await self.get(f"/api/v1/documents/{document_id}/validate")
-        return result.get("valid", False)
-
     async def check_duplicate_by_checksum(self, checksum: str) -> Any:
         """Check whether a document with the given checksum already exists.
         Calls ``GET /api/v1/documents/by-checksum/{checksum}`` on the persistence service.
@@ -48,17 +41,6 @@ class PersistenceClient(BaseClient):
         Calls ``GET /api/v1/documents/{document_id}`` on the persistence service.
         """
         return await self.get(f"/api/v1/documents/{document_id}")
-
-    async def update_document(self, document_id: str, extracted_text: str) -> Any:
-        """Update the extracted text of a document.
-        Calls ``PUT /api/v1/documents/{document_id}`` with JSON body
-        ``{"extracted_text": ...}`` on the persistence service.
-        """
-        return await self._request(
-            "PUT",
-            f"/api/v1/documents/{document_id}",
-            json={"extracted_text": extracted_text},
-        )
 
     async def delete_document(self, document_id: str) -> Any:
         """Delete a document by ID.

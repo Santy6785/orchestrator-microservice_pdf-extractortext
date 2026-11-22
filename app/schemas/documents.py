@@ -40,16 +40,9 @@ class DocumentListItem(BaseModel):
 
 class DocumentDetailResponse(BaseModel):
     """Respuesta completa de un documento.
-    Coincide con el contrato GET/PUT /api/v1/documents/{document_id}.
+    Coincide con el contrato GET /api/v1/documents/{document_id}.
     """
     id: str = Field(..., description="Unique identifier of the document")
     checksum: str = Field(..., description="SHA-256 checksum of the document")
     extracted_text: str = Field(..., description="Text extracted from the document")
     created_at: str = Field(..., description="Timestamp when the document was persisted")
-
-
-class DocumentUpdateRequest(BaseModel):
-    """Cuerpo de petición para actualizar el texto extraído de un documento.
-    Coincide con el contrato PUT /api/v1/documents/{document_id}.
-    """
-    extracted_text: str = Field(..., description="New extracted text for the document")

@@ -22,14 +22,13 @@ EXTRACTED_TEXT = "# Texto actualizado"
 class MockPersistenceClientCrud:
     """Doble de prueba para PersistenceClient con métodos CRUD.
 
-    Captura las llamadas a list_documents, get_document, update_document
+    Captura las llamadas a list_documents, get_document
     y delete_document sin red real.
     """
 
     def __init__(self) -> None:
         self.list_calls: list[tuple[int, int]] = []
         self.get_calls: list[str] = []
-        self.update_calls: list[tuple[str, str]] = []
         self.delete_calls: list[str] = []
         self.exc: Exception | None = None
 
@@ -61,12 +60,6 @@ class MockPersistenceClientCrud:
         if self.exc is not None:
             raise self.exc
         return self.get_return_value
-
-    async def update_document(self, document_id: str, extracted_text: str) -> Any:
-        self.update_calls.append((document_id, extracted_text))
-        if self.exc is not None:
-            raise self.exc
-        return self.update_return_value
 
     async def delete_document(self, document_id: str) -> Any:
         self.delete_calls.append(document_id)
@@ -228,75 +221,6 @@ async def test_ingestion_get_document_request_error_translates_to_502():
 
     with pytest.raises(HTTPException) as exc_info:
         await service.get_document(DOCUMENT_ID)
-    assert exc_info.value.status_code == 502
-
-
-# ---------------------------------------------------------------------------
-# update_document
-# ---------------------------------------------------------------------------
-
-@pytest.mark.asyncio
-async def test_ingestion_update_document_delegates_to_persistence():
-    """El servicio debe llamar a persistence.update_document con id y texto."""
-    service, persistence = _make_service()
-    resultado = await service.update_document(DOCUMENT_ID, EXTRACTED_TEXT)
-
-    assert persistence.update_calls == [(DOCUMENT_ID, EXTRACTED_TEXT)]
-    assert resultado == persistence.update_return_value
-
-
-@pytest.mark.asyncio
-async def test_ingestion_update_document_returns_updated_document():
-    """El servicio debe retornar el documento actualizado de persistencia."""
-    service, persistence = _make_service()
-    persistence.update_return_value = {
-        "id": DOCUMENT_ID,
-        "checksum": "c8ce4e97",
-        "extracted_text": EXTRACTED_TEXT,
-        "created_at": "2026-10-19T10:30:00",
-    }
-    resultado = await service.update_document(DOCUMENT_ID, EXTRACTED_TEXT)
-
-    assert resultado["id"] == DOCUMENT_ID
-    assert resultado["extracted_text"] == EXTRACTED_TEXT
-    assert "checksum" in resultado
-    assert "created_at" in resultado
-
-
-@pytest.mark.asyncio
-async def test_ingestion_update_document_persistence_404_translates_to_404():
-    """HTTP 404 desde persistencia debe traducirse a HTTPException 404
-    del orquestador."""
-    service, persistence = _make_service(persistence_exc=_http_status_error(404))
-
-    with pytest.raises(HTTPException) as exc_info:
-        await service.update_document(DOCUMENT_ID, EXTRACTED_TEXT)
-    assert exc_info.value.status_code == 404
-    detail = exc_info.value.detail
-    assert detail["code"] == "document_not_found"
-    assert persistence.update_calls == [(DOCUMENT_ID, EXTRACTED_TEXT)]
-
-
-@pytest.mark.asyncio
-async def test_ingestion_update_document_http_status_error_translates_to_502():
-    """HTTP 500/502 desde persistencia debe traducirse a HTTPException 502."""
-    service, persistence = _make_service(persistence_exc=_http_status_error(500))
-
-    with pytest.raises(HTTPException) as exc_info:
-        await service.update_document(DOCUMENT_ID, EXTRACTED_TEXT)
-    assert exc_info.value.status_code == 502
-    assert persistence.update_calls == [(DOCUMENT_ID, EXTRACTED_TEXT)]
-
-
-@pytest.mark.asyncio
-async def test_ingestion_update_document_request_error_translates_to_502():
-    """httpx.RequestError desde persistencia debe traducirse a HTTPException 502."""
-    service, _persistence = _make_service(
-        persistence_exc=httpx.ConnectError("connection failed")
-    )
-
-    with pytest.raises(HTTPException) as exc_info:
-        await service.update_document(DOCUMENT_ID, EXTRACTED_TEXT)
     assert exc_info.value.status_code == 502
 
 

@@ -1,12 +1,11 @@
 import uuid
 
-from fastapi import APIRouter, Body, Depends, File, Path, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, Path, Query, UploadFile, status
 
 from app.dependencies import get_ingestion_service
 from app.schemas.documents import (
     DocumentDetailResponse,
     DocumentListItem,
-    DocumentUpdateRequest,
     DocumentUploadResponse,
 )
 from app.schemas.errors import ErrorResponse
@@ -46,22 +45,6 @@ async def upload_document(
     payload = {"filename": file.filename, "content": data, "checksum": checksum}
     result = await ingestion_service.process_document(payload)
     return result
-
-@router.get(
-    "/{document_id}/validate",
-    response_model=dict[str, bool],
-    responses={
-        404: {"model": ErrorResponse},
-        500: {"model": ErrorResponse},
-    },
-)
-async def validate_document(
-    document_id: str,
-    ingestion_service: IngestionService = Depends(get_ingestion_service),
-):
-    """Validate document integrity across downstream services."""
-    valid = await ingestion_service.validate_cross_service_integrity(document_id)
-    return {"valid": valid}
 
 @router.get(
     "/",
@@ -109,33 +92,6 @@ async def get_document(
     PersistenceClient.GET /api/v1/documents/{document_id}.
     """
     return await ingestion_service.get_document(str(document_id))
-
-
-@router.put(
-    "/{document_id}",
-    response_model=DocumentDetailResponse,
-    status_code=status.HTTP_200_OK,
-    responses={
-        404: {"model": ErrorResponse},
-        422: {"model": ErrorResponse},
-        502: {"model": ErrorResponse},
-        503: {"model": ErrorResponse},
-    },
-)
-async def update_document(
-    document_id: str = Path(..., description="ID único del documento"),
-    update_request: DocumentUpdateRequest = Body(
-        ..., description="Nuevo texto extraído del documento"
-    ),
-    ingestion_service: IngestionService = Depends(get_ingestion_service),
-):
-    """Actualiza el texto extraído de un documento existente.
-    Delegata en IngestionService.update_document, que a su vez llama a
-    PersistenceClient.PUT /api/v1/documents/{document_id}.
-    """
-    return await ingestion_service.update_document(
-        document_id, update_request.extracted_text
-    )
 
 
 @router.delete(

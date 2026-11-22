@@ -24,9 +24,6 @@ class DummyIngestionService:
             file_size_bytes=len(payload.get("content", b"")),
         )
 
-    async def validate_cross_service_integrity(self, document_id: str) -> bool:
-        return True
-
     async def get_document(self, document_id: str):
         """Doble de prueba para get_document.
         Retorna un documento válido salvo que se pida el UUID de no-encontrado.
@@ -44,6 +41,14 @@ class DummyIngestionService:
             "extracted_text": "# texto extraído de prueba",
             "created_at": "2026-01-01T00:00:00",
         }
+
+    async def list_documents(self, skip: int = 0, limit: int = 20):
+        """Doble de prueba para list_documents."""
+        return []
+
+    async def delete_document(self, document_id: str):
+        """Doble de prueba para delete_document."""
+        return None
 
 
 # Instancia compartida para poder inspeccionar el payload recibido desde los tests.
@@ -110,12 +115,6 @@ def test_upload_document_payload_contains_valid_checksum():
     assert all(c in "0123456789abcdef" for c in checksum)
     assert checksum == checksum.lower()
     assert checksum == compute_sha256_hex(content)
-
-def test_validate_document():
-    response = client.get("/api/v1/documents/any-id/validate")
-    assert response.status_code == 200
-    assert response.json() == {"valid": True}
-
 
 def test_upload_document_at_size_limit():
     """Un archivo exactamente en el límite de 10 MB debe ser aceptado."""
@@ -252,3 +251,67 @@ def test_get_document_not_found_returns_404():
     assert response.status_code == 404
     body = response.json()
     assert "detail" in body
+
+
+# ---------------------------------------------------------------------------
+# Pruebas de ausencia de rutas retiradas (Issue O-13)
+# ---------------------------------------------------------------------------
+
+def test_get_validate_route_not_registered():
+    """O-13: GET /api/v1/documents/{document_id}/validate debe haber sido retirada.
+    No debe aparecer registrada en las rutas de la aplicación.
+    """
+    for route in app.routes:
+        path = getattr(route, "path", "")
+        methods = getattr(route, "methods", None) or set()
+        if "/validate" in path and "GET" in methods:
+            raise AssertionError(
+                f"La ruta GET {path} aún está registrada y debería haber sido eliminada"
+            )
+
+
+def test_put_document_route_not_registered():
+    """O-13: PUT /api/v1/documents/{document_id} debe haber sido retirada.
+    No debe aparecer registrada en las rutas de la aplicación.
+    """
+    for route in app.routes:
+        path = getattr(route, "path", "")
+        methods = getattr(route, "methods", None) or set()
+        if path == "/api/v1/documents/{document_id}" and "PUT" in methods:
+            raise AssertionError(
+                f"La ruta PUT {path} aún está registrada y debería haber sido eliminada"
+            )
+
+
+def test_removed_routes_not_in_openapi_schema():
+    """O-13: Las rutas retiradas no deben aparecer en el schema OpenAPI generado."""
+    openapi = app.openapi()
+    paths = openapi.get("paths", {})
+
+    # La ruta de validate no debe existir en absoluto.
+    assert "/api/v1/documents/{document_id}/validate" not in paths, (
+        "GET /validate aún aparece en OpenAPI"
+    )
+
+    # La ruta por ID puede seguir existiendo (GET, DELETE) pero no con PUT.
+    document_path = paths.get("/api/v1/documents/{document_id}", {})
+    assert "put" not in document_path, (
+        "PUT /{document_id} aún aparece en OpenAPI"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Pruebas de endpoints que siguen vigentes (Issue O-13)
+# ---------------------------------------------------------------------------
+
+def test_list_documents_returns_200():
+    """GET /api/v1/documents/ (listado paginado) sigue vigente y responde 200."""
+    response = client.get("/api/v1/documents/?skip=0&limit=20")
+    assert response.status_code == 200
+    assert isinstance(response.json(), list)
+
+
+def test_delete_document_returns_204():
+    """DELETE /api/v1/documents/{document_id} sigue vigente y responde 204."""
+    response = client.delete(f"/api/v1/documents/{VALID_UUID}")
+    assert response.status_code == 204

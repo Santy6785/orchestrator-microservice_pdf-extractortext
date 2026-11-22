@@ -89,7 +89,7 @@ curl http://localhost:8000/api/v1/control/health
 | Method | Path | Description |
 |--------|------|-------------|
 | `POST` | `/upload` | Upload a PDF file; returns the persisted document with `id`, `checksum`, `extracted_text`, `created_at`, `filename`, `page_count` and `file_size_bytes` (HTTP 200). |
-| `GET`  | `/{document_id}/validate` | Validate cross‑service integrity; returns `{ "valid": true }` on success. |
+| `GET`  | `/{document_id}` | Obtiene un documento por su ID (HTTP 200). |
 
 ### Control endpoints (`/api/v1/control`)
 | Method | Path | Description |
@@ -109,7 +109,7 @@ Full OpenAPI docs are available at `http://localhost:8000/docs`.
 uv run --extra dev pytest -q
 ```
 
-All tests should pass (`12 passed`).
+All tests should pass (`129 passed`).
 
 ## Build script (`build.sh`)
 

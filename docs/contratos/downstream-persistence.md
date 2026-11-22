@@ -105,13 +105,17 @@ Invocado por el Orquestador tras recibir la respuesta exitosa del Extractor.
 
 ## 5. Llamada: `PUT /api/v1/documents/{document_id}` (Actualizar Texto)
 
-### 5.1. Petición
+> **Estado:** **DIFERIDO / RETIRADO** (Issue O-13 / PR #25)
+> Esta llamada ha sido **retirada** del orquestador porque entra en conflicto con la política WORM (Write Once, Read Many) de persistencia (decisión D3). La edición de documentos se difiere a v1.1.
+> El orquestador **no invoca** `PUT /api/v1/documents/{document_id}`.
+
+### 5.1. Petición (diferido a v1.1)
 - **Método:** `PUT`
 - **Ruta:** `/api/v1/documents/{document_id}`
 - **Headers:** `Content-Type: application/json`, `X-Request-ID: <uuid>`
 - **Body:** `{"extracted_text": "Texto actualizado"}`
 
-### 5.2. Respuestas Esperadas
+### 5.2. Respuestas Esperadas (diferido a v1.1)
 - **HTTP 200 OK:** Devuelve documento actualizado.
 - **HTTP 404 Not Found:** Si no existe el ID.
 

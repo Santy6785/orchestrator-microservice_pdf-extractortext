@@ -169,16 +169,6 @@ async def test_persistence_client_register_document():
     assert resultado["checksum_sha256"] == "a" * 64
 
 
-@respx.mock
-async def test_persistence_client_valida_documento():
-    route = respx.get("http://persistence:8000/api/v1/documents/abc/validate").mock(
-        return_value=Response(200, json={"valid": True})
-    )
-    client = PersistenceClient()
-    assert await client.validate_document("abc") is True
-    assert route.called
-
-
 # --- Tests de política de reintentos de BaseClient ---
 
 NON_RETRYABLE_STATUS_CODES = (400, 404, 422, 429, 500)

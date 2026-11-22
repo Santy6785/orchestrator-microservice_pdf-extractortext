@@ -261,18 +261,6 @@ class IngestionService:
             file_size_bytes=len(pdf_bytes),
         )
 
-    async def validate_cross_service_integrity(self, document_id: str) -> bool:
-        """Validate checksum and duplicate detection across downstream services.
-        Returns ``True`` if the document passes all checks, ``False`` otherwise.
-        """
-        try:
-            # In a real implementation we would call both services; here we
-            # simply ask the persistence service for a validation endpoint.
-            return await self.persistence.validate_document(document_id)
-        except Exception:
-            logger.exception("Integrity validation failed")
-            return False
-
     async def list_documents(self, skip: int = 0, limit: int = 20) -> Any:
         """List documents with pagination.
         Delegates to PersistenceClient.GET /api/v1/documents?skip=&limit=.
@@ -362,67 +350,6 @@ class IngestionService:
             ) from exc
         except Exception as exc:
             logger.exception("Unexpected error getting document %s", document_id)
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail=ErrorResponse(
-                    code="persistence_error",
-                    message="Error communicating with persistence service",
-                ).model_dump(),
-            ) from exc
-
-    async def update_document(self, document_id: str, extracted_text: str) -> Any:
-        """Update the extracted text of a document.
-        Delegates to PersistenceClient.PUT /api/v1/documents/{document_id}.
-        """
-        try:
-            return await self.persistence.update_document(
-                document_id, extracted_text
-            )
-        except httpx.HTTPStatusError as exc:
-            if exc.response.status_code == 404:
-                logger.warning(
-                    "Document %s not found in persistence service for update",
-                    document_id,
-                )
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail=ErrorResponse(
-                        code="document_not_found",
-                        message=f"Document with ID {document_id} not found",
-                    ).model_dump(),
-                ) from exc
-            logger.error(
-                "Persistence service returned unexpected status %d updating "
-                "document %s",
-                exc.response.status_code,
-                document_id,
-            )
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail=ErrorResponse(
-                    code="persistence_error",
-                    message=(
-                        f"Error communicating with persistence service: HTTP "
-                        f"{exc.response.status_code}"
-                    ),
-                ).model_dump(),
-            ) from exc
-        except httpx.RequestError as exc:
-            logger.error(
-                "Persistence service communication failed updating document "
-                "%s: %s",
-                document_id,
-                exc,
-            )
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail=ErrorResponse(
-                    code="persistence_error",
-                    message="Error communicating with persistence service",
-                ).model_dump(),
-            ) from exc
-        except Exception as exc:
-            logger.exception("Unexpected error updating document %s", document_id)
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
                 detail=ErrorResponse(
