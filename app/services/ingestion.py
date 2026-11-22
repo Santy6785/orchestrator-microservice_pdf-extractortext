@@ -445,10 +445,7 @@ class IngestionService:
                 )
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
-                    detail=ErrorResponse(
-                        code="document_not_found",
-                        message=f"Document with ID {document_id} not found",
-                    ).model_dump(),
+                    detail=f"Documento con ID {document_id} no encontrado",
                 ) from exc
             logger.error(
                 "Persistence service returned unexpected status %d deleting "

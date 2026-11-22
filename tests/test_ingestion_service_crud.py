@@ -324,7 +324,7 @@ async def test_ingestion_delete_document_persistence_404_translates_to_404():
         await service.delete_document(DOCUMENT_ID)
     assert exc_info.value.status_code == 404
     detail = exc_info.value.detail
-    assert detail["code"] == "document_not_found"
+    assert detail == f"Documento con ID {DOCUMENT_ID} no encontrado"
     assert persistence.delete_calls == [DOCUMENT_ID]
 
 
