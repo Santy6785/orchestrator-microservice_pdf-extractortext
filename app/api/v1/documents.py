@@ -1,7 +1,12 @@
-from fastapi import APIRouter, Depends, File, UploadFile, status
+from fastapi import APIRouter, Body, Depends, File, Path, Query, UploadFile, status
 
 from app.dependencies import get_ingestion_service
-from app.schemas.documents import DocumentUploadResponse
+from app.schemas.documents import (
+    DocumentDetailResponse,
+    DocumentListItem,
+    DocumentUpdateRequest,
+    DocumentUploadResponse,
+)
 from app.schemas.errors import ErrorResponse
 from app.services.ingestion import IngestionService
 from app.services.validation import (
@@ -56,10 +61,96 @@ async def validate_document(
     valid = await ingestion_service.validate_cross_service_integrity(document_id)
     return {"valid": valid}
 
-# Alias route to satisfy tests that look for any '/documents' path
-@router.get("/", include_in_schema=False)
-async def documents_root():
-    """A minimal endpoint so that '/documents' appears in the route list.
-    It is not part of the public API and is excluded from OpenAPI schema.
+@router.get(
+    "/",
+    response_model=list[DocumentListItem],
+    status_code=status.HTTP_200_OK,
+    responses={
+        422: {"model": ErrorResponse},
+        502: {"model": ErrorResponse},
+        503: {"model": ErrorResponse},
+    },
+)
+async def list_documents(
+    skip: int = Query(
+        0, ge=0, description="Número de documentos a saltar (offset)"
+    ),
+    limit: int = Query(
+        20, ge=1, le=100, description="Cantidad máxima de documentos a retornar"
+    ),
+    ingestion_service: IngestionService = Depends(get_ingestion_service),
+):
+    """Lista paginada de documentos.
+    Delegata en IngestionService.list_documents, que a su vez llama a
+    PersistenceClient.GET /api/v1/documents?skip=&limit=.
     """
-    return {"detail": "documents root"}
+    return await ingestion_service.list_documents(skip=skip, limit=limit)
+
+
+@router.get(
+    "/{document_id}",
+    response_model=DocumentDetailResponse,
+    status_code=status.HTTP_200_OK,
+    responses={
+        404: {"model": ErrorResponse},
+        502: {"model": ErrorResponse},
+        503: {"model": ErrorResponse},
+    },
+)
+async def get_document(
+    document_id: str = Path(..., description="ID único del documento"),
+    ingestion_service: IngestionService = Depends(get_ingestion_service),
+):
+    """Obtiene un documento por su ID.
+    Delegata en IngestionService.get_document, que a su vez llama a
+    PersistenceClient.GET /api/v1/documents/{document_id}.
+    """
+    return await ingestion_service.get_document(document_id)
+
+
+@router.put(
+    "/{document_id}",
+    response_model=DocumentDetailResponse,
+    status_code=status.HTTP_200_OK,
+    responses={
+        404: {"model": ErrorResponse},
+        422: {"model": ErrorResponse},
+        502: {"model": ErrorResponse},
+        503: {"model": ErrorResponse},
+    },
+)
+async def update_document(
+    document_id: str = Path(..., description="ID único del documento"),
+    update_request: DocumentUpdateRequest = Body(
+        ..., description="Nuevo texto extraído del documento"
+    ),
+    ingestion_service: IngestionService = Depends(get_ingestion_service),
+):
+    """Actualiza el texto extraído de un documento existente.
+    Delegata en IngestionService.update_document, que a su vez llama a
+    PersistenceClient.PUT /api/v1/documents/{document_id}.
+    """
+    return await ingestion_service.update_document(
+        document_id, update_request.extracted_text
+    )
+
+
+@router.delete(
+    "/{document_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses={
+        404: {"model": ErrorResponse},
+        502: {"model": ErrorResponse},
+        503: {"model": ErrorResponse},
+    },
+)
+async def delete_document(
+    document_id: str = Path(..., description="ID único del documento"),
+    ingestion_service: IngestionService = Depends(get_ingestion_service),
+):
+    """Elimina un documento por su ID.
+    Delegata en IngestionService.delete_document, que a su vez llama a
+    PersistenceClient.DELETE /api/v1/documents/{document_id}.
+    Retorna HTTP 204 No Content sin cuerpo de respuesta.
+    """
+    await ingestion_service.delete_document(document_id)

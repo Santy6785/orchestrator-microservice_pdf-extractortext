@@ -36,3 +36,32 @@ class PersistenceClient(BaseClient):
         Calls ``GET /api/v1/documents/by-checksum/{checksum}`` on the persistence service.
         """
         return await self.get(f"/api/v1/documents/by-checksum/{checksum}")
+
+    async def list_documents(self, skip: int = 0, limit: int = 20) -> Any:
+        """List documents with pagination.
+        Calls ``GET /api/v1/documents?skip={skip}&limit={limit}`` on the persistence service.
+        """
+        return await self.get("/api/v1/documents", params={"skip": skip, "limit": limit})
+
+    async def get_document(self, document_id: str) -> Any:
+        """Get a document by ID.
+        Calls ``GET /api/v1/documents/{document_id}`` on the persistence service.
+        """
+        return await self.get(f"/api/v1/documents/{document_id}")
+
+    async def update_document(self, document_id: str, extracted_text: str) -> Any:
+        """Update the extracted text of a document.
+        Calls ``PUT /api/v1/documents/{document_id}`` with JSON body
+        ``{"extracted_text": ...}`` on the persistence service.
+        """
+        return await self._request(
+            "PUT",
+            f"/api/v1/documents/{document_id}",
+            json={"extracted_text": extracted_text},
+        )
+
+    async def delete_document(self, document_id: str) -> Any:
+        """Delete a document by ID.
+        Calls ``DELETE /api/v1/documents/{document_id}`` on the persistence service.
+        """
+        return await self._request("DELETE", f"/api/v1/documents/{document_id}")

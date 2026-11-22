@@ -27,3 +27,29 @@ class DocumentUploadResponse(BaseModel):
     filename: str = Field(..., description="Original filename of the uploaded PDF")
     page_count: int = Field(..., description="Number of pages in the PDF")
     file_size_bytes: int = Field(..., description="Size of the uploaded PDF in bytes")
+
+
+class DocumentListItem(BaseModel):
+    """Documento en formato resumido para listados paginados.
+    Coincide con el contrato GET /api/v1/documents/ (id, checksum, created_at).
+    """
+    id: str = Field(..., description="Unique identifier of the document")
+    checksum: str = Field(..., description="SHA-256 checksum of the document")
+    created_at: str = Field(..., description="Timestamp when the document was persisted")
+
+
+class DocumentDetailResponse(BaseModel):
+    """Respuesta completa de un documento.
+    Coincide con el contrato GET/PUT /api/v1/documents/{document_id}.
+    """
+    id: str = Field(..., description="Unique identifier of the document")
+    checksum: str = Field(..., description="SHA-256 checksum of the document")
+    extracted_text: str = Field(..., description="Text extracted from the document")
+    created_at: str = Field(..., description="Timestamp when the document was persisted")
+
+
+class DocumentUpdateRequest(BaseModel):
+    """Cuerpo de petición para actualizar el texto extraído de un documento.
+    Coincide con el contrato PUT /api/v1/documents/{document_id}.
+    """
+    extracted_text: str = Field(..., description="New extracted text for the document")
