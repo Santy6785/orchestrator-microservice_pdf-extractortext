@@ -127,7 +127,7 @@ class IngestionService:
                 status_code=status.HTTP_502_BAD_GATEWAY,
                 detail=ErrorResponse(
                     code="extractor_error",
-                    message=f"Error communicating with extractor service: {exc}",
+                    message="Error communicating with extractor service",
                 ).model_dump(),
             )
 

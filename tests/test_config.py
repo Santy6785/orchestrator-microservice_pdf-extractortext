@@ -63,13 +63,24 @@ class TestSettingsTimeouts:
         assert s.persistence_timeout_seconds == 7.0
         assert s.health_timeout_seconds == 2.5
 
-    @pytest.mark.parametrize("valor", ["0", "-1", "abc", "not-a-number"])
+    @pytest.mark.parametrize(
+        "variable,valor",
+        [
+            (nombre, v)
+            for nombre in (
+                "EXTRACTOR_TIMEOUT_SECONDS",
+                "PERSISTENCE_TIMEOUT_SECONDS",
+                "HEALTH_TIMEOUT_SECONDS",
+            )
+            for v in ("0", "-1", "abc", "not-a-number")
+        ],
+    )
     def test_timeout_invalido_falla_al_arrancar_nombrando_variable(
-        self, monkeypatch, valor
+        self, monkeypatch, variable, valor
     ):
         monkeypatch.setenv("EXTRACTOR_SERVICE_URL", "http://extractor")
         monkeypatch.setenv("PERSISTENCE_SERVICE_URL", "http://persistence:8000")
-        monkeypatch.setenv("EXTRACTOR_TIMEOUT_SECONDS", valor)
+        monkeypatch.setenv(variable, valor)
         with pytest.raises(ValidationError) as exc:
             Settings()
-        assert "extractor_timeout_seconds" in str(exc.value)
+        assert variable.lower() in str(exc.value)

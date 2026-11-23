@@ -375,7 +375,7 @@ async def test_ingestion_extraer_con_tipos_invalidos_devuelve_failed():
 
 @pytest.mark.asyncio
 async def test_ingestion_error_del_extractor_mantiene_comportamiento_de_error():
-    """Excepción en el extractor -> HTTP 502 con detalle del error."""
+    """Excepción en el extractor -> HTTP 502 con detalle genérico, sin filtrar interna."""
     service, _, persistence = _make_service(
         extractor_exc=RuntimeError("extractor caído")
     )
@@ -384,7 +384,11 @@ async def test_ingestion_error_del_extractor_mantiene_comportamiento_de_error():
     with pytest.raises(HTTPException) as exc_info:
         await service.process_document(payload)
     assert exc_info.value.status_code == 502
-    assert "extractor caído" in str(exc_info.value.detail)
+    detail = exc_info.value.detail
+    assert detail["code"] == "extractor_error"
+    assert detail["message"] == "Error communicating with extractor service"
+    # No se filtran detalles internos de la excepción.
+    assert "extractor caído" not in str(detail)
     assert persistence.registered_payload is None
 
 

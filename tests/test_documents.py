@@ -3,7 +3,10 @@ import hashlib
 import httpx
 import respx
 from fastapi.testclient import TestClient
+from httpx import Response
 
+from app.clients.extractor_client import ExtractorClient
+from app.clients.persistence_client import PersistenceClient
 from app.dependencies import get_ingestion_service
 from app.main import app
 from app.schemas.documents import DocumentUploadResponse
@@ -205,21 +208,43 @@ def test_sha256_exact_bytes():
 
 
 def test_upload_extractor_readtimeout_devuelve_502_con_detail():
-    """Extractor lanza ReadTimeout en subida de PDF: endpoint responde 502 con detail no vacío y sin URLs internas."""
-    real_service = IngestionService()
+    """Extractor lanza ReadTimeout en subida de PDF: endpoint responde 502 con detail, sin filtrar internas y sin reintento."""
+
+    content = b"%PDF-1.4 test"
+    checksum = compute_sha256_hex(content)
+
+    real_service = IngestionService(
+        extractor_client=ExtractorClient(service_url="http://extractor"),
+        persistence_client=PersistenceClient(
+            service_url="http://persistence:8000"
+        ),
+    )
     app.dependency_overrides[get_ingestion_service] = lambda: real_service
     try:
         with respx.mock:
-            respx.post("http://extractor/api/v1/extract").mock(
-                side_effect=httpx.ReadTimeout("read timeout")
-            )
-            files = {"file": ("test.pdf", b"%PDF-1.4 test", "application/pdf")}
+            # La persistencia responde 404 (no es duplicado) para permitir llegar al extractor.
+            persistence_route = respx.get(
+                f"http://persistence:8000/api/v1/documents/by-checksum/{checksum}"
+            ).mock(return_value=Response(404))
+            # El extractor lanza ReadTimeout (fallo de transporte en POST: no reintenta por O-14).
+            extractor_route = respx.post(
+                "http://extractor/api/v1/extract"
+            ).mock(side_effect=httpx.ReadTimeout("read timeout"))
+
+            files = {"file": ("test.pdf", content, "application/pdf")}
             response = client.post("/api/v1/documents/upload", files=files)
+
             assert response.status_code == 502
             body = response.json()
             assert "detail" in body and body["detail"] != ""
-            # No se filtran URLs internas ni texto de excepción crudo que las contenga.
+            # No se filtran URLs internas ni texto de excepción crudo.
             assert "http://extractor" not in str(body)
+            assert "read timeout" not in str(body)
+
+            # El extractor se llamó exactamente una vez: ReadTimeout en POST no reintenta (O-14).
+            assert extractor_route.call_count == 1
+            # La persistencia se llamó una vez (check de duplicado antes de extraer).
+            assert persistence_route.call_count == 1
     finally:
         app.dependency_overrides[get_ingestion_service] = lambda: (
             dummy_ingestion_service
