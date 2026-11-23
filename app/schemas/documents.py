@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import AliasChoices, BaseModel, Field
 from typing import Optional
 
 
@@ -49,7 +49,11 @@ class DocumentListItem(BaseModel):
     """
 
     id: str = Field(..., description="Unique identifier of the document")
-    checksum: str = Field(..., description="SHA-256 checksum of the document")
+    checksum: str = Field(
+        ...,
+        validation_alias=AliasChoices("checksum", "checksum_sha256"),
+        description="SHA-256 checksum of the document",
+    )
     created_at: str = Field(
         ..., description="Timestamp when the document was persisted"
     )
@@ -61,8 +65,14 @@ class DocumentDetailResponse(BaseModel):
     """
 
     id: str = Field(..., description="Unique identifier of the document")
-    checksum: str = Field(..., description="SHA-256 checksum of the document")
-    extracted_text: str = Field(..., description="Text extracted from the document")
+    checksum: str = Field(
+        ...,
+        validation_alias=AliasChoices("checksum", "checksum_sha256"),
+        description="SHA-256 checksum of the document",
+    )
+    extracted_text: str = Field(
+        ..., description="Text extracted from the document"
+    )
     created_at: str = Field(
         ..., description="Timestamp when the document was persisted"
     )

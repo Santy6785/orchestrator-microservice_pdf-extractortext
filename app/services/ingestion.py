@@ -267,7 +267,31 @@ class IngestionService:
         Delegates to PersistenceClient.GET /api/v1/documents?skip=&limit=.
         """
         try:
-            return await self.persistence.list_documents(skip=skip, limit=limit)
+            raw_response = await self.persistence.list_documents(
+                skip=skip,
+                limit=limit,
+            )
+
+            # Persistence devuelve un objeto paginado con la clave "items".
+            # Orchestrator conserva su contrato público de lista plana.
+            if isinstance(raw_response, dict):
+                items = raw_response.get("items")
+
+                if not isinstance(items, list):
+                    raise ValueError(
+                        "Invalid paginated response from persistence service"
+                    )
+
+                return items
+
+            # Compatibilidad con respuestas que ya sean listas planas.
+            if isinstance(raw_response, list):
+                return raw_response
+
+            raise ValueError(
+                "Invalid response format from persistence service"
+            )
+
         except httpx.HTTPStatusError as exc:
             logger.error(
                 "Persistence service returned unexpected status %d listing documents",
@@ -283,6 +307,7 @@ class IngestionService:
                     ),
                 ).model_dump(),
             ) from exc
+
         except httpx.RequestError as exc:
             logger.error(
                 "Persistence service communication failed listing documents: %s",
@@ -295,6 +320,7 @@ class IngestionService:
                     message="Error communicating with persistence service",
                 ).model_dump(),
             ) from exc
+
         except Exception as exc:
             logger.exception("Unexpected error listing documents")
             raise HTTPException(
