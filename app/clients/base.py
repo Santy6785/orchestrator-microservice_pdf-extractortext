@@ -106,6 +106,11 @@ class BaseClient:
         # reintento. HTTPStatusError (incluido 4xx) se propaga aquí.
         response.raise_for_status()
         if "application/json" in response.headers.get("content-type", ""):
+            if not response.content:
+                # Cuerpo vacío (p. ej. 200/204 con Content-Type JSON): no hay
+                # nada que decodificar; se devuelve el texto vacío en lugar de
+                # llamar response.json() y provocar JSONDecodeError.
+                return response.text
             return response.json()
         return response.text
 
