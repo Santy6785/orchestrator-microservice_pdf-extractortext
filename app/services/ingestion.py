@@ -13,6 +13,7 @@ from app.schemas.errors import ErrorResponse
 
 logger = logging.getLogger(__name__)
 
+
 class IngestionService:
     """Application service coordinating document ingestion.
     It forwards the uploaded file metadata to the extractor service, then
@@ -39,14 +40,17 @@ class IngestionService:
         # Fail-fast duplicate check against persistence before invoking the extractor.
         if checksum:
             try:
-                duplicate_info = await self.persistence.check_duplicate_by_checksum(checksum)
+                duplicate_info = await self.persistence.check_duplicate_by_checksum(
+                    checksum
+                )
             except httpx.HTTPStatusError as exc:
                 if exc.response.status_code == 404:
                     # Document does not exist in persistence, continue with extraction.
                     pass
                 else:
                     logger.error(
-                        "Persistence service returned unexpected status %d for checksum %s",
+                        "Persistence service returned unexpected status %d "
+                        "for checksum %s",
                         exc.response.status_code,
                         checksum,
                     )
@@ -54,9 +58,12 @@ class IngestionService:
                         status_code=status.HTTP_502_BAD_GATEWAY,
                         detail=ErrorResponse(
                             code="persistence_error",
-                            message=f"Error communicating with persistence service: HTTP {exc.response.status_code}",
+                            message=(
+                                f"Error communicating with persistence service: HTTP "
+                                f"{exc.response.status_code}"
+                            ),
                         ).model_dump(),
-                    )
+                    ) from exc
             except httpx.RequestError as exc:
                 logger.error(
                     "Persistence service communication failed for checksum %s: %s",
@@ -69,8 +76,8 @@ class IngestionService:
                         code="persistence_error",
                         message="Error communicating with persistence service",
                     ).model_dump(),
-                )
-            except Exception:
+                ) from exc
+            except Exception as exc:
                 logger.exception(
                     "Unexpected error checking duplicate for checksum %s",
                     checksum,
@@ -81,12 +88,13 @@ class IngestionService:
                         code="persistence_error",
                         message="Error communicating with persistence service",
                     ).model_dump(),
-                )
+                ) from exc
             else:
                 # HTTP 200: document already exists, it is a duplicate.
                 if not isinstance(duplicate_info, dict) or "id" not in duplicate_info:
                     logger.error(
-                        "Persistence service returned invalid duplicate response for checksum %s: %s",
+                        "Persistence service returned invalid duplicate response "
+                        "for checksum %s: %s",
                         checksum,
                         duplicate_info,
                     )
@@ -129,7 +137,7 @@ class IngestionService:
                     code="extractor_error",
                     message="Error communicating with extractor service",
                 ).model_dump(),
-            )
+            ) from exc
 
         # Validate the extractor response contains the expected fields.
         if not isinstance(extraction_result, dict):
@@ -161,7 +169,11 @@ class IngestionService:
                 ).model_dump(),
             )
 
-        if not isinstance(page_count, int) or isinstance(page_count, bool) or page_count < 0:
+        if (
+            not isinstance(page_count, int)
+            or isinstance(page_count, bool)
+            or page_count < 0
+        ):
             logger.error(
                 "Extractor response missing or invalid 'page_count' field: %s",
                 page_count,
@@ -195,7 +207,7 @@ class IngestionService:
                     code="persistence_error",
                     message=f"Error communicating with persistence service: {exc}",
                 ).model_dump(),
-            )
+            ) from exc
 
         if not isinstance(registration, dict) or "id" not in registration:
             logger.error(
@@ -234,7 +246,9 @@ class IngestionService:
                 status_code=status.HTTP_502_BAD_GATEWAY,
                 detail=ErrorResponse(
                     code="persistence_error",
-                    message="Persistence service returned missing or invalid created_at",
+                    message=(
+                        "Persistence service returned missing or invalid created_at"
+                    ),
                 ).model_dump(),
             )
 
@@ -248,14 +262,154 @@ class IngestionService:
             file_size_bytes=len(pdf_bytes),
         )
 
-    async def validate_cross_service_integrity(self, document_id: str) -> bool:
-        """Validate checksum and duplicate detection across downstream services.
-        Returns ``True`` if the document passes all checks, ``False`` otherwise.
+    async def list_documents(self, skip: int = 0, limit: int = 20) -> Any:
+        """List documents with pagination.
+        Delegates to PersistenceClient.GET /api/v1/documents?skip=&limit=.
         """
         try:
-            # In a real implementation we would call both services; here we
-            # simply ask the persistence service for a validation endpoint.
-            return await self.persistence.validate_document(document_id)
-        except Exception:
-            logger.exception("Integrity validation failed")
-            return False
+            return await self.persistence.list_documents(skip=skip, limit=limit)
+        except httpx.HTTPStatusError as exc:
+            logger.error(
+                "Persistence service returned unexpected status %d listing documents",
+                exc.response.status_code,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=ErrorResponse(
+                    code="persistence_error",
+                    message=(
+                        f"Error communicating with persistence service: HTTP "
+                        f"{exc.response.status_code}"
+                    ),
+                ).model_dump(),
+            ) from exc
+        except httpx.RequestError as exc:
+            logger.error(
+                "Persistence service communication failed listing documents: %s",
+                exc,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=ErrorResponse(
+                    code="persistence_error",
+                    message="Error communicating with persistence service",
+                ).model_dump(),
+            ) from exc
+        except Exception as exc:
+            logger.exception("Unexpected error listing documents")
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=ErrorResponse(
+                    code="persistence_error",
+                    message="Error communicating with persistence service",
+                ).model_dump(),
+            ) from exc
+
+    async def get_document(self, document_id: str) -> Any:
+        """Get a document by ID.
+        Delegates to PersistenceClient.GET /api/v1/documents/{document_id}.
+        """
+        try:
+            return await self.persistence.get_document(document_id)
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 404:
+                logger.warning(
+                    "Document %s not found in persistence service",
+                    document_id,
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Documento con ID {document_id} no encontrado",
+                ) from exc
+            logger.error(
+                "Persistence service returned unexpected status %d for document %s",
+                exc.response.status_code,
+                document_id,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=ErrorResponse(
+                    code="persistence_error",
+                    message=(
+                        f"Error communicating with persistence service: HTTP "
+                        f"{exc.response.status_code}"
+                    ),
+                ).model_dump(),
+            ) from exc
+        except httpx.RequestError as exc:
+            logger.error(
+                "Persistence service communication failed for document %s: %s",
+                document_id,
+                exc,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=ErrorResponse(
+                    code="persistence_error",
+                    message="Error communicating with persistence service",
+                ).model_dump(),
+            ) from exc
+        except Exception as exc:
+            logger.exception("Unexpected error getting document %s", document_id)
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=ErrorResponse(
+                    code="persistence_error",
+                    message="Error communicating with persistence service",
+                ).model_dump(),
+            ) from exc
+
+    async def delete_document(self, document_id: str) -> Any:
+        """Delete a document by ID.
+        Delegates to PersistenceClient.DELETE /api/v1/documents/{document_id}.
+        """
+        try:
+            return await self.persistence.delete_document(document_id)
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 404:
+                logger.warning(
+                    "Document %s not found in persistence service for deletion",
+                    document_id,
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Documento con ID {document_id} no encontrado",
+                ) from exc
+            logger.error(
+                "Persistence service returned unexpected status %d deleting "
+                "document %s",
+                exc.response.status_code,
+                document_id,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=ErrorResponse(
+                    code="persistence_error",
+                    message=(
+                        f"Error communicating with persistence service: HTTP "
+                        f"{exc.response.status_code}"
+                    ),
+                ).model_dump(),
+            ) from exc
+        except httpx.RequestError as exc:
+            logger.error(
+                "Persistence service communication failed deleting document %s: %s",
+                document_id,
+                exc,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=ErrorResponse(
+                    code="persistence_error",
+                    message="Error communicating with persistence service",
+                ).model_dump(),
+            ) from exc
+        except Exception as exc:
+            logger.exception("Unexpected error deleting document %s", document_id)
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=ErrorResponse(
+                    code="persistence_error",
+                    message="Error communicating with persistence service",
+                ).model_dump(),
+            ) from exc

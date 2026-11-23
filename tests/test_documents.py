@@ -2,6 +2,7 @@ import hashlib
 
 import httpx
 import respx
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from httpx import Response
 
@@ -30,8 +31,29 @@ class DummyIngestionService:
             file_size_bytes=len(payload.get("content", b"")),
         )
 
-    async def validate_cross_service_integrity(self, document_id: str) -> bool:
-        return True
+    async def get_document(self, document_id: str):
+        """Doble de prueba para get_document."""
+        if document_id == "00000000-0000-0000-0000-000000000000":
+            raise HTTPException(
+                status_code=404,
+                detail=f"Documento con ID {document_id} no encontrado",
+            )
+        return {
+            "id": document_id,
+            "checksum": (
+                "c8ce4e97a404b12b1d8f0e245f04ff607be1048b16d973c2f23bab86655c808b"
+            ),
+            "extracted_text": "# texto extraído de prueba",
+            "created_at": "2026-01-01T00:00:00",
+        }
+
+    async def list_documents(self, skip: int = 0, limit: int = 20):
+        """Doble de prueba para list_documents."""
+        return []
+
+    async def delete_document(self, document_id: str):
+        """Doble de prueba para delete_document."""
+        return None
 
 
 # Instancia compartida para poder inspeccionar el payload recibido desde los tests.
@@ -97,12 +119,6 @@ def test_upload_document_payload_contains_valid_checksum():
     assert all(c in "0123456789abcdef" for c in checksum)
     assert checksum == checksum.lower()
     assert checksum == compute_sha256_hex(content)
-
-
-def test_validate_document():
-    response = client.get("/api/v1/documents/any-id/validate")
-    assert response.status_code == 200
-    assert response.json() == {"valid": True}
 
 
 def test_upload_document_at_size_limit():
@@ -207,8 +223,106 @@ def test_sha256_exact_bytes():
     assert compute_sha256_hex(content) == expected
 
 
+# ---------------------------------------------------------------------------
+# Pruebas para GET /api/v1/documents/{document_id} (issue O-11)
+# ---------------------------------------------------------------------------
+
+VALID_UUID = "65f1a2b3-c4d5-e6f7-a8b9-c0d1e2f3a4b5"
+NOT_FOUND_UUID = "00000000-0000-0000-0000-000000000000"
+
+
+def test_get_document_valid_uuid_returns_200():
+    """O-11: UUID válido y documento existente -> HTTP 200 con los 4 campos."""
+    response = client.get(f"/api/v1/documents/{VALID_UUID}")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["id"] == VALID_UUID
+    assert data["checksum"] == (
+        "c8ce4e97a404b12b1d8f0e245f04ff607be1048b16d973c2f23bab86655c808b"
+    )
+    assert data["extracted_text"] == "# texto extraído de prueba"
+    assert data["created_at"] == "2026-01-01T00:00:00"
+
+
+def test_get_document_invalid_uuid_returns_422():
+    """O-11: ID que no es un UUID válido -> HTTP 422."""
+    response = client.get("/api/v1/documents/no-es-un-uuid-valido")
+    assert response.status_code == 422
+
+
+def test_get_document_not_found_returns_404():
+    """O-11: UUID válido pero documento inexistente -> HTTP 404 con detail."""
+    response = client.get(f"/api/v1/documents/{NOT_FOUND_UUID}")
+    assert response.status_code == 404
+    body = response.json()
+    assert "detail" in body
+
+
+# ---------------------------------------------------------------------------
+# Pruebas de ausencia de rutas retiradas (Issue O-13)
+# ---------------------------------------------------------------------------
+
+
+def test_get_validate_route_not_registered():
+    """O-13: GET /api/v1/documents/{document_id}/validate debe haber sido retirada."""
+    for route in app.routes:
+        path = getattr(route, "path", "")
+        methods = getattr(route, "methods", None) or set()
+        if "/validate" in path and "GET" in methods:
+            raise AssertionError(
+                f"La ruta GET {path} aún está registrada y debería haber sido eliminada"
+            )
+
+
+def test_put_document_route_not_registered():
+    """O-13: PUT /api/v1/documents/{document_id} debe haber sido retirada."""
+    for route in app.routes:
+        path = getattr(route, "path", "")
+        methods = getattr(route, "methods", None) or set()
+        if path == "/api/v1/documents/{document_id}" and "PUT" in methods:
+            raise AssertionError(
+                f"La ruta PUT {path} aún está registrada y debería haber sido eliminada"
+            )
+
+
+def test_removed_routes_not_in_openapi_schema():
+    """O-13: Las rutas retiradas no deben aparecer en el schema OpenAPI generado."""
+    openapi = app.openapi()
+    paths = openapi.get("paths", {})
+
+    assert "/api/v1/documents/{document_id}/validate" not in paths, (
+        "GET /validate aún aparece en OpenAPI"
+    )
+
+    document_path = paths.get("/api/v1/documents/{document_id}", {})
+    assert "put" not in document_path, "PUT /{document_id} aún aparece en OpenAPI"
+
+
+# ---------------------------------------------------------------------------
+# Pruebas de endpoints que siguen vigentes (Issue O-13)
+# ---------------------------------------------------------------------------
+
+
+def test_list_documents_returns_200():
+    """GET /api/v1/documents/ (listado paginado) sigue vigente y responde 200."""
+    response = client.get("/api/v1/documents/?skip=0&limit=20")
+    assert response.status_code == 200
+    assert isinstance(response.json(), list)
+
+
+def test_delete_document_returns_204():
+    """DELETE /api/v1/documents/{document_id} sigue vigente y responde 204."""
+    response = client.delete(f"/api/v1/documents/{VALID_UUID}")
+    assert response.status_code == 204
+
+
+# ---------------------------------------------------------------------------
+# Prueba de integración O-15: error del extractor sin filtrar información interna
+# ---------------------------------------------------------------------------
+
+
 def test_upload_extractor_readtimeout_devuelve_502_con_detail():
-    """Extractor lanza ReadTimeout en subida de PDF: endpoint responde 502 con detail, sin filtrar internas y sin reintento."""
+    """O-15: ReadTimeout del extractor devuelve 502 sin filtrar detalles internos."""
 
     content = b"%PDF-1.4 test"
     checksum = compute_sha256_hex(content)
@@ -220,13 +334,15 @@ def test_upload_extractor_readtimeout_devuelve_502_con_detail():
         ),
     )
     app.dependency_overrides[get_ingestion_service] = lambda: real_service
+
     try:
         with respx.mock:
-            # La persistencia responde 404 (no es duplicado) para permitir llegar al extractor.
+            # Persistence responde 404 (no es duplicado), permitiendo llegar al extractor.
             persistence_route = respx.get(
                 f"http://persistence:8000/api/v1/documents/by-checksum/{checksum}"
             ).mock(return_value=Response(404))
-            # El extractor lanza ReadTimeout (fallo de transporte en POST: no reintenta por O-14).
+
+            # El extractor lanza ReadTimeout. Un POST con ReadTimeout no reintenta.
             extractor_route = respx.post(
                 "http://extractor/api/v1/extract"
             ).mock(side_effect=httpx.ReadTimeout("read timeout"))
@@ -237,15 +353,17 @@ def test_upload_extractor_readtimeout_devuelve_502_con_detail():
             assert response.status_code == 502
             body = response.json()
             assert "detail" in body and body["detail"] != ""
-            # No se filtran URLs internas ni texto de excepción crudo.
+
+            # No se filtran URLs internas ni el texto crudo de la excepción.
             assert "http://extractor" not in str(body)
             assert "read timeout" not in str(body)
 
-            # El extractor se llamó exactamente una vez: ReadTimeout en POST no reintenta (O-14).
+            # El extractor se llamó una sola vez: POST ReadTimeout no reintenta (O-14).
             assert extractor_route.call_count == 1
-            # La persistencia se llamó una vez (check de duplicado antes de extraer).
+
+            # Persistence se llamó una vez para comprobar duplicados.
             assert persistence_route.call_count == 1
     finally:
-        app.dependency_overrides[get_ingestion_service] = lambda: (
-            dummy_ingestion_service
+        app.dependency_overrides[get_ingestion_service] = (
+            lambda: dummy_ingestion_service
         )

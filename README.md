@@ -92,7 +92,7 @@ curl http://localhost:8000/api/v1/control/health
 | Method | Path | Description |
 |--------|------|-------------|
 | `POST` | `/upload` | Upload a PDF file; returns the persisted document with `id`, `checksum`, `extracted_text`, `created_at`, `filename`, `page_count` and `file_size_bytes` (HTTP 200). |
-| `GET`  | `/{document_id}/validate` | Validate cross‑service integrity; returns `{ "valid": true }` on success. |
+| `GET`  | `/{document_id}` | Obtiene un documento por su ID (HTTP 200). |
 
 ### Control endpoints (`/api/v1/control`)
 | Method | Path | Description |
@@ -109,16 +109,16 @@ Full OpenAPI docs are available at `http://localhost:8000/docs`.
 
 ```bash
 # Run the entire test suite (including integration tests)
-uv run --extra dev pytest -q
+uv run --extra dev pytest -q -m "not system"
 ```
 
-All tests should pass (`12 passed`).
+All tests should pass (`129 passed`).
 
 ## Build script (`build.sh`)
 
 The script performs three steps:
 1. **Lint** – `ruff .`
-2. **Test** – `uv run --extra dev pytest -q`
+2. **Test** – `uv run --extra dev pytest -q -m "not system"`
 3. **Docker build** – `docker build -t orchestrator .`
 
 It aborts on the first failure, ensuring that only clean, tested code is containerized.

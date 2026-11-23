@@ -20,18 +20,17 @@ jobs:
 
       - name: Install uv
         run: |
-          curl -LsSf https://github.com/astral-sh/uv/releases/latest/download/uv-installer.sh | sh
-          echo "${HOME}/.cargo/bin" >> $GITHUB_PATH
+          curl -LsSf [https://github.com/astral-sh/uv/releases/latest/download/uv-installer.sh](https://github.com/astral-sh/uv/releases/latest/download/uv-installer.sh) | sh
+          echo "${HOME}/.local/bin:${HOME}/.cargo/bin" >> $GITHUB_PATH
 
       - name: Install dependencies
-        run: uv sync --no-dev --frozen
+        run: uv sync --extra dev --frozen
 
       - name: Lint with ruff
-        run: ruff .
+        run: uv run ruff check .
 
       - name: Run tests
-        run: uv run --extra dev pytest -q
+        run: uv run --extra dev pytest -q -m "not system"
 
       - name: Build Docker image
-        run: |
-          docker build -t orchestrator:latest .
+        run: docker build -t orchestrator:latest .

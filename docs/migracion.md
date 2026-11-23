@@ -30,7 +30,7 @@
 | **`app/application/config_service.py`** | **ELIMINADO** | Sobre-abstracción innecesaria que envolvía a `Settings`. Se reemplaza por inyección directa de `Settings` con `Depends(get_settings)`, estándar en FastAPI. |
 | **`app/application/services/checksum_service.py`** | **Orquestador** (`app/services/ingestion.py`) | Lógica de cálculo de checksum SHA-256 en memoria para validación fail-fast (409 inmediato sin saturar la red). Verificación de existencia vía HTTP al microservicio de persistencia. |
 | **`app/application/services/document_ingestion_service.py`** | **Orquestador** (`app/services/ingestion.py`) | Lógica de orquestación de subida: recibe archivo -> calcula SHA-256 -> verifica existencia con Persistencia -> si no existe, invoca Extractor -> envía texto y metadatos a Persistencia -> retorna JSON al cliente. |
-| **`app/application/services/document_service.py`** | **Orquestador** (`app/services/ingestion.py`) | Servicio de ingesta y validación de documentos. Implementa `process_document` y `validate_cross_service_integrity` delegando en `ExtractorClient` y `PersistenceClient`. |
+| **`app/application/services/document_service.py`** | **Orquestador** (`app/services/ingestion.py`) | Servicio de ingesta de documentos. Implementa `process_document` delegando en `ExtractorClient` y `PersistenceClient`. |
 | **`app/application/dto/document_dto.py`** | **Orquestador** (`app/schemas/documents.py`) | Esquemas Pydantic V2 (`DocumentUploadRequest`, `DocumentResponse`, `ProcessingResult`) para validación y serialización de peticiones/respuestas. |
 | **`app/domain/models/document.py`** | **Persistencia** | Entidad de dominio con mapeo BSON/MongoDB (`_id`, `checksum`, `extracted_text`, `created_at`). El orquestador no gestiona entidades de base de datos directamente, solo DTOs/esquemas. |
 | **`app/domain/repositories/document_repository.py`** | **Persistencia** | Puerto de persistencia (`DocumentRepositoryPort`). |
@@ -55,7 +55,7 @@
 | `POST` | `/api/v1/documents/upload` | **Conservado sin cambios** | `frontend/index.html` | Orquesta cálculo de hash, verificación en persistencia, extracción en extractor y guardado en persistencia. Retorna JSON. |
 | `GET` | `/api/v1/documents/` | **Conservado sin cambios** | Frontend / Clientes REST | Consulta documentos con paginación (`skip`, `limit`) delegando en persistencia. Retorna `List[DocumentListResponse]`. |
 | `GET` | `/api/v1/documents/{id}` | **Conservado sin cambios** | Frontend / Clientes REST | Obtiene documento por ID delegando en persistencia. Retorna `DocumentResponse` o 404. |
-| `PUT` | `/api/v1/documents/{id}` | **Conservado sin cambios** | Frontend / Clientes REST | Actualiza texto extraído delegando en persistencia. Retorna `DocumentResponse` o 404. |
+| `PUT` | `/api/v1/documents/{id}` | **DIFERIDO A v1.1** (WORM D3) | Frontend / Clientes REST | Retirado del orquestador por política WORM; la edición se difiere a v1.1. |
 | `DELETE` | `/api/v1/documents/{id}` | **Conservado sin cambios** | Frontend / Clientes REST | Elimina documento por ID delegando en persistencia. Retorna 204 No Content o 404. |
 | `GET` | `/api/v1/health` y `/health` | **Conservado y enriquecido** | Traefik / Orquestador | En el monolito solo chequeaba MongoDB. En el orquestador verifica la conectividad y salud de `extractor` y `persistencia`. |
 | `POST` | `/api/v1/documents/` | **DEPRECADO / ELIMINADO** | Ninguno (código muerto) | El endpoint legacy retornaba `text/plain` descargable. El frontend no lo utiliza (usa `/upload`). Para cumplir con la restricción de *"comunicación por JSON"* de la arquitectura, se descarta del orquestador activo. |
@@ -107,7 +107,7 @@ orchestrator-microservice_pdf-extractortext/
 ├── tests/
 │   ├── __init__.py
 │   ├── test_api.py               # Tests de creación de la app y routers
-│   ├── test_documents.py         # Tests de upload y validate
+│   ├── test_documents.py         # Tests de upload
 │   └── test_health_integration.py # Tests de integración con respx
 ├── Dockerfile                    # Multi-stage build con uv
 ├── docker-compose.yml            # Definición del servicio orquestador

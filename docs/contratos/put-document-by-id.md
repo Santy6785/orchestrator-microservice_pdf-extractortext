@@ -1,10 +1,14 @@
-# Contrato de Endpoint: Actualizar Texto Extraído de un Documento
+﻿# Contrato de Endpoint: Actualizar Texto Extraído de un Documento
+
+> **Estado:** **DIFERIDO A v1.1** (Issue O-13 / PR #25 / Sincronizado en O-22)
+> Este endpoint ha sido **retirado** del orquestador porque entra en conflicto con la política WORM (Write Once, Read Many) de persistencia, definida en la decisión D3. La edición de documentos se difiere a la versión v1.1.
+> No existe implementación activa ni ruta registrada en el orquestador para este contrato.
 
 ## 1. Identificación
 - **Método HTTP:** `PUT`
 - **Ruta:** `/api/v1/documents/{document_id}`
 - **Etiqueta:** `documents`
-- **Descripción:** Actualiza el campo `extracted_text` de un documento existente en persistencia sin modificar su checksum original ni su ID.
+- **Descripción:** *(Diferido a v1.1)* Actualiza el campo `extracted_text` de un documento existente en persistencia sin modificar su checksum original ni su ID.
 
 ---
 

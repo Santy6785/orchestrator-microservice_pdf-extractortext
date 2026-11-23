@@ -1,3 +1,4 @@
+
 import json
 from unittest.mock import call, patch
 
@@ -6,7 +7,7 @@ import pytest
 import respx
 from httpx import Response
 
-from app.clients.base import BACKOFF, MAX_ATTEMPTS
+from app.clients.base import BACKOFF, MAX_ATTEMPTS, BaseClient
 from app.clients.extractor_client import ExtractorClient
 from app.clients.persistence_client import PersistenceClient
 
@@ -24,7 +25,7 @@ async def test_extractor_client_llama_url_configurada():
 
 @respx.mock
 async def test_extractor_client_envia_archivo_multipart_correcto():
-    """TEST 1: Verifica envío multipart con campo file, nombre, MIME y bytes exactos."""
+    """Verifica envío multipart con campo file, nombre, MIME y bytes exactos."""
     pdf_bytes = b"%PDF-1.4 contenido de prueba del PDF"
     filename = "documento.pdf"
 
@@ -38,15 +39,12 @@ async def test_extractor_client_envia_archivo_multipart_correcto():
     assert route.called
     assert resultado == {"content": "# Texto", "page_count": 1}
 
-    call = route.calls[0]
-    request = call.request
+    request = route.calls[0].request
 
-    # Content-Type multipart/form-data (no application/json)
     content_type = request.headers.get("content-type", "")
     assert "multipart/form-data" in content_type
     assert "application/json" not in content_type
 
-    # Cuerpo multipart contiene el campo, nombre, MIME y los bytes originales
     body = request.content
     assert b'name="file"' in body
     assert f'filename="{filename}"'.encode() in body
@@ -56,7 +54,7 @@ async def test_extractor_client_envia_archivo_multipart_correcto():
 
 @respx.mock
 async def test_extractor_client_respuesta_exitosa():
-    """TEST 2: Verifica devolución correcta de content y page_count (HTTP 200)."""
+    """Verifica devolución correcta de content y page_count (HTTP 200)."""
     route = respx.post("http://extractor/api/v1/extract").mock(
         return_value=Response(
             200, json={"content": "# Documento de prueba", "page_count": 3}
@@ -74,18 +72,17 @@ async def test_extractor_client_respuesta_exitosa():
 
 @respx.mock
 async def test_extractor_client_timeout_30_segundos():
-    """TEST 3: Verifica timeout de 30s solo en ExtractorClient, sin afectar a otros."""
+    """Verifica timeout de 30s en ExtractorClient, sin afectar a Persistence."""
     client = ExtractorClient()
     assert client.timeout == 30.0
 
-    # BaseClient default y PersistenceClient no se ven afectados
     persistence_client = PersistenceClient()
     assert persistence_client.timeout == 5.0
 
 
 @respx.mock
 async def test_extractor_client_no_envia_json_cuerpo():
-    """TEST 4: Verifica que la petición no depende de un body JSON con filename/metadata."""
+    """Verifica que la petición multipart no depende de un body JSON."""
     route = respx.post("http://extractor/api/v1/extract").mock(
         return_value=Response(200, json={"content": "# Texto", "page_count": 1})
     )
@@ -94,8 +91,7 @@ async def test_extractor_client_no_envia_json_cuerpo():
     await client.extract_document("test.pdf", b"%PDF-1.4 test")
 
     assert route.called
-    call = route.calls[0]
-    request = call.request
+    request = route.calls[0].request
 
     content_type = request.headers.get("content-type", "")
     assert "multipart/form-data" in content_type
@@ -142,18 +138,13 @@ async def test_persistence_client_register_document():
     }
     resultado = await client.register_document(payload)
 
-    # 1. La petición fue ejecutada.
     assert route.called
-    # 2. El método HTTP es POST.
     assert route.calls[0].request.method == "POST"
-    # 3. La URL es exactamente /api/v1/documents.
     assert route.calls[0].request.url.path == "/api/v1/documents"
-    # 4. La URL no contiene ningún ID.
     assert "/documents/" not in str(route.calls[0].request.url)
-    # 5. El cuerpo JSON coincide exactamente con el payload esperado.
+
     body = json.loads(route.calls[0].request.content)
     assert body == payload
-    # 6. No se envían campos adicionales.
     assert set(body.keys()) == {
         "checksum_sha256",
         "filename",
@@ -162,21 +153,10 @@ async def test_persistence_client_register_document():
         "file_size_bytes",
         "metadata",
     }
-    # 7. El cliente devuelve correctamente el JSON de respuesta.
+
     assert isinstance(resultado, dict)
-    # 8. El ID devuelto coincide con el generado por persistencia.
     assert resultado["id"] == "65f1a2b3c4d5e6f7a8b9c0d1"
     assert resultado["checksum_sha256"] == "a" * 64
-
-
-@respx.mock
-async def test_persistence_client_valida_documento():
-    route = respx.get("http://persistence:8000/api/v1/documents/abc/validate").mock(
-        return_value=Response(200, json={"valid": True})
-    )
-    client = PersistenceClient()
-    assert await client.validate_document("abc") is True
-    assert route.called
 
 
 # --- Tests de política de reintentos de BaseClient ---
@@ -188,7 +168,7 @@ RETRYABLE_STATUS_CODES = (502, 503, 504)
 @respx.mock
 @pytest.mark.parametrize("status_code", NON_RETRYABLE_STATUS_CODES)
 async def test_non_retryable_status_single_attempt(status_code):
-    """Códigos 4xx y 500 se intentan una sola vez (no se reintentan)."""
+    """Códigos 4xx y 500 se intentan una sola vez."""
     route = respx.post("http://extractor/api/v1/extract").mock(
         return_value=Response(status_code, json={"detail": "error"})
     )
@@ -202,7 +182,7 @@ async def test_non_retryable_status_single_attempt(status_code):
 @patch("app.clients.base.asyncio.sleep")
 @pytest.mark.parametrize("status_code", RETRYABLE_STATUS_CODES)
 async def test_post_never_retries_on_status(mock_sleep, status_code):
-    """POST nunca reintenta por código de estado (502/503/504 incluido): 1 llamada."""
+    """POST nunca reintenta por código HTTP, incluidos 502, 503 y 504."""
     route = respx.post("http://extractor/api/v1/extract").mock(
         return_value=Response(status_code, json={"detail": "error"})
     )
@@ -224,7 +204,6 @@ async def test_connect_error_retries(mock_sleep):
     with pytest.raises(httpx.ConnectError):
         await client.post("/api/v1/extract", json={"foo": "bar"})
     assert route.call_count == MAX_ATTEMPTS
-    # BACKOFF = (0.2, 0.5, 1.0): espera antes del reintento k es BACKOFF[k-1].
     assert mock_sleep.call_args_list == [call(0.2), call(0.5)]
 
 
@@ -239,23 +218,123 @@ async def test_connect_timeout_retries(mock_sleep):
     with pytest.raises(httpx.ConnectTimeout):
         await client.post("/api/v1/extract", json={"foo": "bar"})
     assert route.call_count == MAX_ATTEMPTS
-    # BACKOFF = (0.2, 0.5, 1.0): espera antes del reintento k es BACKOFF[k-1].
     assert mock_sleep.call_args_list == [call(0.2), call(0.5)]
 
 
 def test_clientes_usan_timeout_de_settings(monkeypatch):
-    """Los clientes toman su timeout de los settings, sin valores fijos en código."""
+    """Los clientes toman su timeout de los settings, sin valores fijos."""
     monkeypatch.setenv("EXTRACTOR_SERVICE_URL", "http://extractor")
     monkeypatch.setenv("PERSISTENCE_SERVICE_URL", "http://persistence:8000")
     monkeypatch.setenv("EXTRACTOR_TIMEOUT_SECONDS", "45.0")
     monkeypatch.setenv("PERSISTENCE_TIMEOUT_SECONDS", "7.0")
+
     from app.core.config import Settings
 
-    s = Settings()
-    extractor = ExtractorClient(timeout=s.extractor_timeout_seconds)
-    persistence = PersistenceClient(timeout=s.persistence_timeout_seconds)
+    settings = Settings()
+    extractor = ExtractorClient(timeout=settings.extractor_timeout_seconds)
+    persistence = PersistenceClient(timeout=settings.persistence_timeout_seconds)
+
     assert extractor.timeout == 45.0
     assert persistence.timeout == 7.0
+
+
+# --- Tests de manejo de respuestas HTTP vacías en BaseClient ---
+
+
+@respx.mock
+async def test_base_client_request_204_json_content_type_empty_body():
+    """HTTP 204 con Content-Type JSON y body vacío no provoca JSONDecodeError."""
+    client = BaseClient(service_url="http://test")
+    route = respx.get("http://test/api/v1/resource").mock(
+        return_value=Response(204, headers={"content-type": "application/json"})
+    )
+    resultado = await client._request("GET", "/api/v1/resource")
+    assert route.called
+    assert resultado == ""
+
+
+@respx.mock
+async def test_base_client_request_200_json_content_type_empty_body():
+    """HTTP 200 con Content-Type JSON y body vacío no provoca JSONDecodeError."""
+    client = BaseClient(service_url="http://test")
+    route = respx.post("http://test/api/v1/resource").mock(
+        return_value=Response(
+            200, content=b"", headers={"content-type": "application/json"}
+        )
+    )
+    resultado = await client._request("POST", "/api/v1/resource", json={"foo": "bar"})
+    assert route.called
+    assert resultado == ""
+
+
+@respx.mock
+async def test_base_client_request_200_valid_json_still_deserializes():
+    """HTTP 200 con JSON válido sigue deserializándose normalmente."""
+    client = BaseClient(service_url="http://test")
+    route = respx.post("http://test/api/v1/resource").mock(
+        return_value=Response(200, json={"id": "doc-1", "status": "ok"})
+    )
+    resultado = await client._request("POST", "/api/v1/resource", json={"foo": "bar"})
+    assert route.called
+    assert resultado == {"id": "doc-1", "status": "ok"}
+
+
+@respx.mock
+async def test_base_client_request_200_plain_text_returns_text():
+    """HTTP 200 con texto plano se devuelve como texto."""
+    client = BaseClient(service_url="http://test")
+    route = respx.get("http://test/api/v1/resource").mock(
+        return_value=Response(
+            200, text="texto plano", headers={"content-type": "text/plain"}
+        )
+    )
+    resultado = await client._request("GET", "/api/v1/resource")
+    assert route.called
+    assert resultado == "texto plano"
+
+
+@respx.mock
+async def test_base_client_request_204_no_content_type_returns_empty_text():
+    """HTTP 204 sin Content-Type se devuelve como texto vacío."""
+    client = BaseClient(service_url="http://test")
+    route = respx.delete("http://test/api/v1/resource").mock(
+        return_value=Response(204)
+    )
+    resultado = await client._request("DELETE", "/api/v1/resource")
+    assert route.called
+    assert resultado == ""
+
+
+@respx.mock
+@patch("app.clients.base.asyncio.sleep")
+async def test_base_client_empty_json_body_not_retried(mock_sleep):
+    """Body JSON vacío no se reintenta: exactamente un intento."""
+    client = BaseClient(service_url="http://test")
+    route = respx.post("http://test/api/v1/resource").mock(
+        return_value=Response(
+            200, content=b"", headers={"content-type": "application/json"}
+        )
+    )
+    resultado = await client._request("POST", "/api/v1/resource", json={"foo": "bar"})
+    assert route.called
+    assert resultado == ""
+    assert route.call_count == 1
+    mock_sleep.assert_not_called()
+
+
+@respx.mock
+async def test_persistence_client_delete_document_204_json_content_type():
+    """PersistenceClient.delete_document con 204 y Content-Type JSON devuelve texto vacío."""
+    document_id = "doc-123"
+    route = respx.delete(
+        f"http://persistence:8000/api/v1/documents/{document_id}"
+    ).mock(
+        return_value=Response(204, headers={"content-type": "application/json"})
+    )
+    client = PersistenceClient()
+    resultado = await client.delete_document(document_id)
+    assert route.called
+    assert resultado == ""
 
 
 @respx.mock
@@ -263,10 +342,16 @@ def test_clientes_usan_timeout_de_settings(monkeypatch):
 async def test_persistence_get_readtimeout_reintenta_sin_dormir(mock_sleep):
     """GET a persistencia con ReadTimeout se reintenta (O-14) sin dormir de verdad."""
     client = PersistenceClient()
-    route = respx.get("http://persistence:8000/api/v1/documents/by-checksum/abc").mock(
+    route = respx.get(
+        "http://persistence:8000/api/v1/documents/by-checksum/abc"
+    ).mock(
         side_effect=httpx.ReadTimeout("read timeout")
     )
     with pytest.raises(httpx.ReadTimeout):
         await client.get("/api/v1/documents/by-checksum/abc")
+
     assert route.call_count == MAX_ATTEMPTS
-    assert mock_sleep.call_args_list == [call(BACKOFF[0]), call(BACKOFF[1])]
+    assert mock_sleep.call_args_list == [
+        call(BACKOFF[0]),
+        call(BACKOFF[1]),
+    ]
