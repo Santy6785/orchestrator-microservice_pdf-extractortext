@@ -68,9 +68,9 @@ class MockPersistenceClientCrud:
         return ""
 
 
-def _make_service(persistence_exc: Exception | None = None) -> tuple[
-    IngestionService, MockPersistenceClientCrud
-]:
+def _make_service(
+    persistence_exc: Exception | None = None,
+) -> tuple[IngestionService, MockPersistenceClientCrud]:
     persistence = MockPersistenceClientCrud()
     if persistence_exc is not None:
         persistence.exc = persistence_exc
@@ -87,6 +87,7 @@ def _http_status_error(status_code: int = 404) -> httpx.HTTPStatusError:
 # ---------------------------------------------------------------------------
 # list_documents
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_ingestion_list_documents_delegates_to_persistence():
@@ -159,6 +160,7 @@ async def test_ingestion_list_documents_unexpected_error_translates_to_502():
 # get_document
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_ingestion_get_document_delegates_to_persistence():
     """El servicio debe llamar a persistence.get_document con el document_id."""
@@ -227,6 +229,7 @@ async def test_ingestion_get_document_request_error_translates_to_502():
 # ---------------------------------------------------------------------------
 # delete_document
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_ingestion_delete_document_delegates_to_persistence():

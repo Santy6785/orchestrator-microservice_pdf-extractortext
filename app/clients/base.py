@@ -15,7 +15,13 @@ class BaseClient:
     not contain hardcoded URLs or localhost defaults.
     """
 
-    def __init__(self, service_url: str, timeout: float = 5.0, max_retries: int = 3, backoff_factor: float = 0.5):
+    def __init__(
+        self,
+        service_url: str,
+        timeout: float = 5.0,
+        max_retries: int = 3,
+        backoff_factor: float = 0.5,
+    ):
         self.timeout = timeout
         self.max_retries = max_retries
         self.backoff_factor = backoff_factor
@@ -31,7 +37,9 @@ class BaseClient:
             headers["X-Request-ID"] = request_id
         for attempt in range(1, self.max_retries + 1):
             try:
-                response = await self._client.request(method, url, headers=headers, **kwargs)
+                response = await self._client.request(
+                    method, url, headers=headers, **kwargs
+                )
                 response.raise_for_status()
                 content_type = response.headers.get("content-type", "")
                 if "application/json" in content_type and response.content:
@@ -71,7 +79,9 @@ class BaseClient:
     async def get(self, path: str, **kwargs) -> Any:
         return await self._request("GET", path, **kwargs)
 
-    async def post(self, path: str, json: dict[str, Any] | None = None, **kwargs) -> Any:
+    async def post(
+        self, path: str, json: dict[str, Any] | None = None, **kwargs
+    ) -> Any:
         return await self._request("POST", path, json=json, **kwargs)
 
     async def close(self):

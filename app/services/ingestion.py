@@ -13,6 +13,7 @@ from app.schemas.errors import ErrorResponse
 
 logger = logging.getLogger(__name__)
 
+
 class IngestionService:
     """Application service coordinating document ingestion.
     It forwards the uploaded file metadata to the extractor service, then
@@ -392,8 +393,7 @@ class IngestionService:
             ) from exc
         except httpx.RequestError as exc:
             logger.error(
-                "Persistence service communication failed deleting document "
-                "%s: %s",
+                "Persistence service communication failed deleting document %s: %s",
                 document_id,
                 exc,
             )

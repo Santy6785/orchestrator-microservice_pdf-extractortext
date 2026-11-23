@@ -1,6 +1,7 @@
 import logging
 import os
 
+
 def configure_logging():
     """Configure root logger based on LOG_LEVEL env var.
     Logs are emitted in a simple format suitable for container stdout.

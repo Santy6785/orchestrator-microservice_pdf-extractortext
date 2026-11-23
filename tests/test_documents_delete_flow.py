@@ -10,7 +10,6 @@ Sigue el patron de tests/test_duplicate_check.py:
 
 from __future__ import annotations
 
-import httpx
 import respx
 from fastapi.testclient import TestClient
 from httpx import Response
@@ -77,11 +76,11 @@ def test_upload_409_delete_upload_200_flow():
 
     # Paso 4: extractor y registro solo se invocan en el segundo upload exitoso.
     extractor_route = respx.post(f"{EXTRACTOR_BASE}/api/v1/extract").mock(
-        return_value=Response(200, json={"content": "# Texto extraído", "page_count": 3})
+        return_value=Response(
+            200, json={"content": "# Texto extraído", "page_count": 3}
+        )
     )
-    register_route = respx.post(
-        f"{PERSISTENCE_BASE}/api/v1/documents"
-    ).mock(
+    register_route = respx.post(f"{PERSISTENCE_BASE}/api/v1/documents").mock(
         return_value=Response(
             201,
             json={"id": "doc-nuevo", "created_at": "2026-01-01T00:00:00"},

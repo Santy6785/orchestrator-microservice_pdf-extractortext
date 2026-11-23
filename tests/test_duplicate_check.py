@@ -40,7 +40,8 @@ def _client_with_real_service():
 
 @respx.mock
 def test_duplicate_document_returns_409_without_calling_extractor():
-    """Caso 1: Persistencia responde 200 (duplicado) -> HTTP 409, sin llamar al extractor."""
+    """Caso 1: Persistencia responde 200 (duplicado) -> HTTP 409, sin ll
+    amar al extractor."""
     for client in _client_with_real_service():
         checksum_route = respx.get(
             f"{PERSISTENCE_BASE}/api/v1/documents/by-checksum/{CHECKSUM}"
@@ -72,15 +73,17 @@ def test_nonexistent_document_continues_to_extractor():
     for client in _client_with_real_service():
         checksum_route = respx.get(
             f"{PERSISTENCE_BASE}/api/v1/documents/by-checksum/{CHECKSUM}"
-        ).mock(
-            return_value=Response(404, json={"exists": False, "checksum": CHECKSUM})
-        )
+        ).mock(return_value=Response(404, json={"exists": False, "checksum": CHECKSUM}))
         respx.post(f"{EXTRACTOR_BASE}/api/v1/extract").mock(
-            return_value=Response(200, json={"content": "# Texto extraído", "page_count": 3})
+            return_value=Response(
+                200, json={"content": "# Texto extraído", "page_count": 3}
+            )
         )
-        respx.post(
-            f"{PERSISTENCE_BASE}/api/v1/documents"
-        ).mock(return_value=Response(201, json={"id": "doc-456", "created_at": "2026-01-01T00:00:00"}))
+        respx.post(f"{PERSISTENCE_BASE}/api/v1/documents").mock(
+            return_value=Response(
+                201, json={"id": "doc-456", "created_at": "2026-01-01T00:00:00"}
+            )
+        )
 
         response = client.post(
             "/api/v1/documents/upload",
@@ -128,7 +131,8 @@ def test_persistence_5xx_returns_502_without_calling_extractor():
 
 @respx.mock
 def test_persistence_connection_error_returns_502_without_calling_extractor():
-    """Caso 4: Error de comunicacion con persistencia -> HTTP 502, sin llamar al extractor."""
+    """Caso 4: Error de comunicacion con persistencia -> HTTP 502, sin l
+    lamar al extractor."""
     for client in _client_with_real_service():
         checksum_route = respx.get(
             f"{PERSISTENCE_BASE}/api/v1/documents/by-checksum/{CHECKSUM}"

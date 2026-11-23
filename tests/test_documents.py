@@ -3,6 +3,7 @@ import hashlib
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
+from app.dependencies import get_ingestion_service
 from app.main import app
 from app.schemas.documents import DocumentUploadResponse
 from app.services.validation import MAX_FILE_SIZE, compute_sha256_hex
@@ -54,11 +55,11 @@ class DummyIngestionService:
 # Instancia compartida para poder inspeccionar el payload recibido desde los tests.
 dummy_ingestion_service = DummyIngestionService()
 
-from app.dependencies import get_ingestion_service
 
 app.dependency_overrides[get_ingestion_service] = lambda: dummy_ingestion_service
 
 client = TestClient(app)
+
 
 def test_upload_document():
     files = {"file": ("test.pdf", b"%PDF-1.4...", "application/pdf")}
@@ -115,6 +116,7 @@ def test_upload_document_payload_contains_valid_checksum():
     assert all(c in "0123456789abcdef" for c in checksum)
     assert checksum == checksum.lower()
     assert checksum == compute_sha256_hex(content)
+
 
 def test_upload_document_at_size_limit():
     """Un archivo exactamente en el límite de 10 MB debe ser aceptado."""
@@ -257,6 +259,7 @@ def test_get_document_not_found_returns_404():
 # Pruebas de ausencia de rutas retiradas (Issue O-13)
 # ---------------------------------------------------------------------------
 
+
 def test_get_validate_route_not_registered():
     """O-13: GET /api/v1/documents/{document_id}/validate debe haber sido retirada.
     No debe aparecer registrada en las rutas de la aplicación.
@@ -295,14 +298,13 @@ def test_removed_routes_not_in_openapi_schema():
 
     # La ruta por ID puede seguir existiendo (GET, DELETE) pero no con PUT.
     document_path = paths.get("/api/v1/documents/{document_id}", {})
-    assert "put" not in document_path, (
-        "PUT /{document_id} aún aparece en OpenAPI"
-    )
+    assert "put" not in document_path, "PUT /{document_id} aún aparece en OpenAPI"
 
 
 # ---------------------------------------------------------------------------
 # Pruebas de endpoints que siguen vigentes (Issue O-13)
 # ---------------------------------------------------------------------------
+
 
 def test_list_documents_returns_200():
     """GET /api/v1/documents/ (listado paginado) sigue vigente y responde 200."""

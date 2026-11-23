@@ -18,6 +18,7 @@ from app.services.validation import (
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
+
 @router.post(
     "/upload",
     response_model=DocumentUploadResponse,
@@ -46,6 +47,7 @@ async def upload_document(
     result = await ingestion_service.process_document(payload)
     return result
 
+
 @router.get(
     "/",
     response_model=list[DocumentListItem],
@@ -57,9 +59,7 @@ async def upload_document(
     },
 )
 async def list_documents(
-    skip: int = Query(
-        0, ge=0, description="Número de documentos a saltar (offset)"
-    ),
+    skip: int = Query(0, ge=0, description="Número de documentos a saltar (offset)"),
     limit: int = Query(
         20, ge=1, le=100, description="Cantidad máxima de documentos a retornar"
     ),
