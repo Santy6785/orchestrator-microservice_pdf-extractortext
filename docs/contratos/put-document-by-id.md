@@ -1,6 +1,6 @@
-# Contrato de Endpoint: Actualizar Texto Extraído de un Documento
+﻿# Contrato de Endpoint: Actualizar Texto Extraído de un Documento
 
-> **Estado:** **DIFERIDO A v1.1** (Issue O-13 / PR #25)
+> **Estado:** **DIFERIDO A v1.1** (Issue O-13 / PR #25 / Sincronizado en O-22)
 > Este endpoint ha sido **retirado** del orquestador porque entra en conflicto con la política WORM (Write Once, Read Many) de persistencia, definida en la decisión D3. La edición de documentos se difiere a la versión v1.1.
 > No existe implementación activa ni ruta registrada en el orquestador para este contrato.
 
