@@ -27,13 +27,17 @@ PERSISTENCE_BASE = "http://persistence:8000"
 # list_documents (GET /api/v1/documents?skip=&limit=)
 # ---------------------------------------------------------------------------
 
+
 @respx.mock
 async def test_persistence_client_list_documents_calls_get_with_query_params():
     """Debe llamar GET /api/v1/documents con skip y limit en query string."""
     route = respx.get(f"{PERSISTENCE_BASE}/api/v1/documents").mock(
-        return_value=Response(200, json=[
-            {"id": "doc-1", "checksum": "abc", "created_at": "2026-01-01T00:00:00"},
-        ])
+        return_value=Response(
+            200,
+            json=[
+                {"id": "doc-1", "checksum": "abc", "created_at": "2026-01-01T00:00:00"},
+            ],
+        )
     )
     client = PersistenceClient()
     resultado = await client.list_documents(skip=10, limit=25)
@@ -67,10 +71,13 @@ async def test_persistence_client_list_documents_default_params():
 async def test_persistence_client_list_documents_returns_list():
     """Debe interpretar correctamente la respuesta JSON como una lista."""
     route = respx.get(f"{PERSISTENCE_BASE}/api/v1/documents").mock(
-        return_value=Response(200, json=[
-            {"id": "doc-1", "checksum": "aaa", "created_at": "2026-01-01"},
-            {"id": "doc-2", "checksum": "bbb", "created_at": "2026-01-02"},
-        ])
+        return_value=Response(
+            200,
+            json=[
+                {"id": "doc-1", "checksum": "aaa", "created_at": "2026-01-01"},
+                {"id": "doc-2", "checksum": "bbb", "created_at": "2026-01-02"},
+            ],
+        )
     )
     client = PersistenceClient()
     resultado = await client.list_documents()
@@ -140,17 +147,21 @@ async def test_persistence_client_list_documents_includes_x_request_id():
 # get_document (GET /api/v1/documents/{document_id})
 # ---------------------------------------------------------------------------
 
+
 @respx.mock
 async def test_persistence_client_get_document_calls_get_with_id_in_path():
     """Debe llamar GET /api/v1/documents/{document_id} con el ID en el path."""
     document_id = "65f1a2b3c4d5e6f7a8b9c0d1"
     route = respx.get(f"{PERSISTENCE_BASE}/api/v1/documents/{document_id}").mock(
-        return_value=Response(200, json={
-            "id": document_id,
-            "checksum": "abc",
-            "extracted_text": "# Texto",
-            "created_at": "2026-01-01T00:00:00",
-        })
+        return_value=Response(
+            200,
+            json={
+                "id": document_id,
+                "checksum": "abc",
+                "extracted_text": "# Texto",
+                "created_at": "2026-01-01T00:00:00",
+            },
+        )
     )
     client = PersistenceClient()
     resultado = await client.get_document(document_id)
@@ -158,24 +169,32 @@ async def test_persistence_client_get_document_calls_get_with_id_in_path():
     assert route.called
     assert route.calls[0].request.method == "GET"
     assert route.calls[0].request.url.path == f"/api/v1/documents/{document_id}"
-    assert "/documents/" not in str(route.calls[0].request.url).replace(
-        f"/api/v1/documents/{document_id}", ""
-    ) or True  # el ID está en el path, no como query param
+    assert (
+        "/documents/"
+        not in str(route.calls[0].request.url).replace(
+            f"/api/v1/documents/{document_id}", ""
+        )
+        or True
+    )  # el ID está en el path, no como query param
     assert isinstance(resultado, dict)
     assert resultado["id"] == document_id
 
 
 @respx.mock
 async def test_persistence_client_get_document_returns_full_document():
-    """Debe devolver el documento completo con id, checksum, extracted_text, created_at."""
+    """Debe devolver el documento completo con id, checksum, extracted_t
+    ext, created_at."""
     document_id = "doc-123"
     route = respx.get(f"{PERSISTENCE_BASE}/api/v1/documents/{document_id}").mock(
-        return_value=Response(200, json={
-            "id": document_id,
-            "checksum": "c8ce4e97",
-            "extracted_text": "Texto completo extraído del documento PDF...",
-            "created_at": "2026-10-19T10:30:00",
-        })
+        return_value=Response(
+            200,
+            json={
+                "id": document_id,
+                "checksum": "c8ce4e97",
+                "extracted_text": "Texto completo extraído del documento PDF...",
+                "created_at": "2026-10-19T10:30:00",
+            },
+        )
     )
     client = PersistenceClient()
     resultado = await client.get_document(document_id)
@@ -232,6 +251,7 @@ async def test_persistence_client_get_document_connect_error():
 # delete_document (DELETE /api/v1/documents/{document_id})
 # ---------------------------------------------------------------------------
 
+
 @respx.mock
 async def test_persistence_client_delete_document_calls_delete_with_id_in_path():
     """Debe llamar DELETE /api/v1/documents/{document_id} sin cuerpo."""
@@ -246,7 +266,9 @@ async def test_persistence_client_delete_document_calls_delete_with_id_in_path()
     assert route.calls[0].request.method == "DELETE"
     assert route.calls[0].request.url.path == f"/api/v1/documents/{document_id}"
     # DELETE no envía body JSON
-    assert route.calls[0].request.content == b"" or route.calls[0].request.content is None
+    assert (
+        route.calls[0].request.content == b"" or route.calls[0].request.content is None
+    )
 
 
 @respx.mock

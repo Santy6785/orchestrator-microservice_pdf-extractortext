@@ -1,4 +1,4 @@
-import logging
+﻿import logging
 from typing import Any
 
 from app.clients.base import BaseClient
@@ -26,15 +26,19 @@ class PersistenceClient(BaseClient):
 
     async def check_duplicate_by_checksum(self, checksum: str) -> Any:
         """Check whether a document with the given checksum already exists.
-        Calls ``GET /api/v1/documents/by-checksum/{checksum}`` on the persistence service.
+        Calls `GET /api/v1/documents/by-checksum/{checksum}` on the
+        persistence service.
         """
         return await self.get(f"/api/v1/documents/by-checksum/{checksum}")
 
     async def list_documents(self, skip: int = 0, limit: int = 20) -> Any:
         """List documents with pagination.
-        Calls ``GET /api/v1/documents?skip={skip}&limit={limit}`` on the persistence service.
+        Calls `GET /api/v1/documents?skip={skip}&limit={limit}` on the
+        persistence service.
         """
-        return await self.get("/api/v1/documents", params={"skip": skip, "limit": limit})
+        return await self.get(
+            "/api/v1/documents", params={"skip": skip, "limit": limit}
+        )
 
     async def get_document(self, document_id: str) -> Any:
         """Get a document by ID.

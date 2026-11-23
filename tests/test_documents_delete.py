@@ -28,6 +28,7 @@ def _client():
 # CASO 1 — Borrado exitoso: persistencia 204 -> orquestador 204 con body vacío
 # ---------------------------------------------------------------------------
 
+
 @respx.mock
 def test_delete_document_persistence_204_returns_204_empty_body():
     document_id = "65f1a2b3-c4d5-e6f7-a8b9-c0d1e2f3a4b5"
@@ -46,6 +47,7 @@ def test_delete_document_persistence_204_returns_204_empty_body():
 # ---------------------------------------------------------------------------
 # CASO 2 — Documento inexistente: persistencia 404 -> orquestador 404
 # ---------------------------------------------------------------------------
+
 
 @respx.mock
 def test_delete_document_persistence_404_returns_404():
@@ -68,6 +70,7 @@ def test_delete_document_persistence_404_returns_404():
 # CASO 3 — Error HTTP de persistencia: 500 -> orquestador 502
 # ---------------------------------------------------------------------------
 
+
 @respx.mock
 def test_delete_document_persistence_500_returns_502():
     document_id = "65f1a2b3-c4d5-e6f7-a8b9-c0d1e2f3a4b5"
@@ -87,6 +90,7 @@ def test_delete_document_persistence_500_returns_502():
 # ---------------------------------------------------------------------------
 # CASO 4 — Error de conexión: ConnectError -> orquestador 502
 # ---------------------------------------------------------------------------
+
 
 @respx.mock
 def test_delete_document_connection_error_returns_502():
@@ -109,13 +113,16 @@ def test_delete_document_connection_error_returns_502():
 # CASO 5 — Timeout: ReadTimeout -> orquestador 502
 # ---------------------------------------------------------------------------
 
+
 @respx.mock
 def test_delete_document_read_timeout_returns_502():
     document_id = "65f1a2b3-c4d5-e6f7-a8b9-c0d1e2f3a4b5"
     route = respx.delete(f"{PERSISTENCE_BASE}/api/v1/documents/{document_id}").mock(
         side_effect=httpx.ReadTimeout(
             "read timeout",
-            request=httpx.Request("DELETE", f"{PERSISTENCE_BASE}/api/v1/documents/{document_id}"),
+            request=httpx.Request(
+                "DELETE", f"{PERSISTENCE_BASE}/api/v1/documents/{document_id}"
+            ),
         )
     )
 
@@ -131,6 +138,7 @@ def test_delete_document_read_timeout_returns_502():
 # ---------------------------------------------------------------------------
 # CASO 6 — ID inválido: DELETE usa str, no valida UUID, no devuelve 422
 # ---------------------------------------------------------------------------
+
 
 @respx.mock
 def test_delete_document_invalid_id_calls_persistence_without_422():
@@ -154,6 +162,7 @@ def test_delete_document_invalid_id_calls_persistence_without_422():
 # CASO 7 — Delegación: DELETE sobre URL downstream correcta, ID coincide
 # ---------------------------------------------------------------------------
 
+
 @respx.mock
 def test_delete_document_delegates_delete_with_correct_id_and_no_body():
     document_id = "doc-123"
@@ -169,12 +178,15 @@ def test_delete_document_delegates_delete_with_correct_id_and_no_body():
     assert route.calls[0].request.method == "DELETE"
     assert route.calls[0].request.url.path == f"/api/v1/documents/{document_id}"
     # DELETE no envía body JSON
-    assert route.calls[0].request.content == b"" or route.calls[0].request.content is None
+    assert (
+        route.calls[0].request.content == b"" or route.calls[0].request.content is None
+    )
 
 
 # ---------------------------------------------------------------------------
 # CASO 8 — Respuesta 204 sin contenido: no hay excepción de parseo JSON
 # ---------------------------------------------------------------------------
+
 
 @respx.mock
 def test_delete_document_204_empty_response_no_json_parse_exception():

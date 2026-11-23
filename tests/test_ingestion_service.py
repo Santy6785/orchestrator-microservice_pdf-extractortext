@@ -269,12 +269,16 @@ async def test_ingestion_persistencia_id_none_devuelve_failed():
 
 @pytest.mark.asyncio
 async def test_ingestion_persistencia_respuesta_invalida_devuelve_failed():
-    """Si persistencia devuelve una respuesta sin id, el servicio falla sin inventar ID."""
+    """Si persistencia devuelve una respuesta sin id, el servicio falla
+    sin inventar ID."""
 
     class PersistenciaSinId(MockPersistenceClient):
         async def register_document(self, payload: dict[str, Any]) -> Any:
             self.registered_payload = payload
-            return {"checksum_sha256": "x", "created_at": "2026-01-01T00:00:00"}  # sin campo "id"
+            return {
+                "checksum_sha256": "x",
+                "created_at": "2026-01-01T00:00:00",
+            }  # sin campo "id"
 
     persistence = PersistenciaSinId()
     extractor = MockExtractorClient()
@@ -325,7 +329,8 @@ async def test_ingestion_conserva_bytes_originales_en_payload():
 
 @pytest.mark.asyncio
 async def test_ingestion_guarda_extraido_en_nuevas_claves():
-    """extracted_text y page_count se agregan al payload de persistencia sin perder contenido previo."""
+    """extracted_text y page_count se agregan al payload de persistencia
+    sin perder contenido previo."""
     service, _, persistence = _make_service()
     payload = _base_payload()
 
@@ -451,7 +456,8 @@ class MockPersistenceHttp503(MockPersistenceClient):
 
 @pytest.mark.asyncio
 async def test_ingestion_extractor_ok_persistencia_503_no_documento_creado():
-    """Extractor OK + Persistencia HTTP 503 -> HTTP 502 con detail, sin documento creado."""
+    """Extractor OK + Persistencia HTTP 503 -> HTTP 502 con detail, sin
+    documento creado."""
     extractor = MockExtractorClient()
     persistence = MockPersistenceHttp503()
     service = IngestionService(
@@ -483,7 +489,10 @@ async def test_ingestion_extractor_ok_persistencia_503_no_documento_creado():
     assert "code" in detail
     assert "message" in detail
 
-    # No se devuelve un objeto de éxito: la excepción impide el return de DocumentUploadResponse.
-    # El mock de Persistencia lanzó HTTP 503 antes de devolver un id, por lo que el test no
-    # observa un documento creado a partir de la respuesta del mock. El mock no puede verificar
+    # No se devuelve un objeto de éxito: la excepción impide el return
+    # de DocumentUploadResponse.
+    # El mock de Persistencia lanzó HTTP 503 antes de devolver un id, p
+    # or lo que el test no
+    # observa un documento creado a partir de la respuesta del mock. El
+    # mock no puede verificar
     # si Persistencia creó un registro internamente antes de fallar.

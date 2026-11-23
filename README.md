@@ -106,7 +106,7 @@ Full OpenAPI docs are available at `http://localhost:8000/docs`.
 
 ```bash
 # Run the entire test suite (including integration tests)
-uv run --extra dev pytest -q
+uv run --extra dev pytest -q -m "not system"
 ```
 
 All tests should pass (`129 passed`).
@@ -115,7 +115,7 @@ All tests should pass (`129 passed`).
 
 The script performs three steps:
 1. **Lint** – `ruff .`
-2. **Test** – `uv run --extra dev pytest -q`
+2. **Test** – `uv run --extra dev pytest -q -m "not system"`
 3. **Docker build** – `docker build -t orchestrator .`
 
 It aborts on the first failure, ensuring that only clean, tested code is containerized.

@@ -85,7 +85,8 @@ async def test_extractor_client_timeout_30_segundos():
 
 @respx.mock
 async def test_extractor_client_no_envia_json_cuerpo():
-    """TEST 4: Verifica que la petición no depende de un body JSON con filename/metadata."""
+    """TEST 4: Verifica que la petición no depende de un body JSON con f
+    ilename/metadata."""
     route = respx.post("http://extractor/api/v1/extract").mock(
         return_value=Response(200, json={"content": "# Texto", "page_count": 1})
     )
@@ -192,7 +193,8 @@ async def test_non_retryable_status_single_attempt(status_code):
 @patch("app.clients.base.asyncio.sleep")
 @pytest.mark.parametrize("status_code", RETRYABLE_STATUS_CODES)
 async def test_retryable_status_retries(mock_sleep, status_code):
-    """Códigos 502, 503 y 504 se reintentan hasta agotar max_retries con backoff ordenado."""
+    """Códigos 502, 503 y 504 se reintentan hasta agotar max_retries con
+    backoff ordenado."""
     route = respx.post("http://extractor/api/v1/extract").mock(
         return_value=Response(status_code, json={"detail": "error"})
     )
@@ -239,7 +241,8 @@ async def test_connect_timeout_retries(mock_sleep):
 
 @respx.mock
 async def test_base_client_request_204_json_content_type_empty_body():
-    """HTTP 204 con Content-Type application/json y body vacío no provoca JSONDecodeError."""
+    """HTTP 204 con Content-Type application/json y body vacío no provoc
+    a JSONDecodeError."""
     client = BaseClient(service_url="http://test")
     route = respx.get("http://test/api/v1/resource").mock(
         return_value=Response(204, headers={"content-type": "application/json"})
@@ -251,10 +254,13 @@ async def test_base_client_request_204_json_content_type_empty_body():
 
 @respx.mock
 async def test_base_client_request_200_json_content_type_empty_body():
-    """HTTP 200 con Content-Type application/json y body vacío no provoca JSONDecodeError."""
+    """HTTP 200 con Content-Type application/json y body vacío no provoc
+    a JSONDecodeError."""
     client = BaseClient(service_url="http://test")
     route = respx.post("http://test/api/v1/resource").mock(
-        return_value=Response(200, content=b"", headers={"content-type": "application/json"})
+        return_value=Response(
+            200, content=b"", headers={"content-type": "application/json"}
+        )
     )
     resultado = await client._request("POST", "/api/v1/resource", json={"foo": "bar"})
     assert route.called
@@ -278,7 +284,9 @@ async def test_base_client_request_200_plain_text_returns_text():
     """HTTP 200 con texto plano se devuelve como texto."""
     client = BaseClient(service_url="http://test")
     route = respx.get("http://test/api/v1/resource").mock(
-        return_value=Response(200, text="texto plano", headers={"content-type": "text/plain"})
+        return_value=Response(
+            200, text="texto plano", headers={"content-type": "text/plain"}
+        )
     )
     resultado = await client._request("GET", "/api/v1/resource")
     assert route.called
@@ -289,9 +297,7 @@ async def test_base_client_request_200_plain_text_returns_text():
 async def test_base_client_request_204_no_content_type_returns_empty_text():
     """HTTP 204 sin Content-Type se devuelve como texto vacío."""
     client = BaseClient(service_url="http://test")
-    route = respx.delete("http://test/api/v1/resource").mock(
-        return_value=Response(204)
-    )
+    route = respx.delete("http://test/api/v1/resource").mock(return_value=Response(204))
     resultado = await client._request("DELETE", "/api/v1/resource")
     assert route.called
     assert resultado == ""
@@ -303,7 +309,9 @@ async def test_base_client_empty_json_body_not_retried(mock_sleep):
     """Body JSON vacío no se reintenta: exactamente un intento."""
     client = BaseClient(service_url="http://test")
     route = respx.post("http://test/api/v1/resource").mock(
-        return_value=Response(200, content=b"", headers={"content-type": "application/json"})
+        return_value=Response(
+            200, content=b"", headers={"content-type": "application/json"}
+        )
     )
     resultado = await client._request("POST", "/api/v1/resource", json={"foo": "bar"})
     assert route.called
@@ -314,11 +322,12 @@ async def test_base_client_empty_json_body_not_retried(mock_sleep):
 
 @respx.mock
 async def test_persistence_client_delete_document_204_json_content_type():
-    """PersistenceClient.delete_document con 204 + Content-Type JSON devuelve texto vacío."""
+    """PersistenceClient.delete_document con 204 + Content-Type JSON dev
+    uelve texto vacío."""
     document_id = "doc-123"
-    route = respx.delete(f"http://persistence:8000/api/v1/documents/{document_id}").mock(
-        return_value=Response(204, headers={"content-type": "application/json"})
-    )
+    route = respx.delete(
+        f"http://persistence:8000/api/v1/documents/{document_id}"
+    ).mock(return_value=Response(204, headers={"content-type": "application/json"}))
     client = PersistenceClient()
     resultado = await client.delete_document(document_id)
     assert route.called

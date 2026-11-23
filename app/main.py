@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 
-from app.core import config, logging as core_logging, middleware
+from app.core import logging as core_logging, middleware
 from app.api.v1 import documents, control
 
 
@@ -15,6 +15,7 @@ def create_app() -> FastAPI:
     # Configure logger early
     core_logging.configure_logging()
     import logging
+
     logger = logging.getLogger(__name__)
 
     app = FastAPI(title="Orquestador Microservice", version="0.1.0")
@@ -33,6 +34,7 @@ def create_app() -> FastAPI:
         logger.exception("Unhandled exception: %s", exc)
         from fastapi.responses import JSONResponse
         from app.schemas.errors import ErrorResponse
+
         return JSONResponse(
             status_code=500,
             content=ErrorResponse(

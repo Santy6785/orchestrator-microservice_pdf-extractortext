@@ -1,3 +1,4 @@
+from .control_impl import shutdown, pause, resume, metrics
 import asyncio
 from fastapi import APIRouter, Request, status
 from fastapi.responses import JSONResponse
@@ -6,6 +7,7 @@ from app.clients.extractor_client import ExtractorClient
 from app.clients.persistence_client import PersistenceClient
 
 router = APIRouter(prefix="/control", tags=["control"])
+
 
 @router.get(
     "/health",
@@ -24,9 +26,17 @@ async def health(request: Request) -> JSONResponse:
             extractor.get("/health"), persistence.get("/api/v1/health")
         )
         # Extract status field if JSON contains it
-        extractor_health = extractor_resp.get("status") if isinstance(extractor_resp, dict) else extractor_resp
-        persistence_health = persistence_resp.get("status") if isinstance(persistence_resp, dict) else persistence_resp
-    except Exception as exc:
+        extractor_health = (
+            extractor_resp.get("status")
+            if isinstance(extractor_resp, dict)
+            else extractor_resp
+        )
+        persistence_health = (
+            persistence_resp.get("status")
+            if isinstance(persistence_resp, dict)
+            else persistence_resp
+        )
+    except Exception:
         # If any downstream call fails, report unknown status
         extractor_health = "unreachable"
         persistence_health = "unreachable"
@@ -43,11 +53,11 @@ async def health(request: Request) -> JSONResponse:
         },
     )
 
+
 # The other control endpoints remain unchanged; they are imported from the
 # existing file. To avoid duplication we will keep them in a separate module
 # (`app/api/v1/control_impl.py`) and re-export here.
 
-from .control_impl import shutdown, pause, resume, metrics
 
 router.include_router(shutdown)
 router.include_router(pause)
