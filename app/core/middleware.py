@@ -22,11 +22,7 @@ async def pause_middleware(request: Request, call_next):
     The /pause and /resume endpoints toggle the global _pause_flag.
     The error response follows the uniform JSON error contract.
     """
-    if _pause_flag and request.url.path not in {
-        "/api/v1/pause",
-        "/api/v1/resume",
-        "/api/v1/health",
-    }:
+    if _pause_flag and not request.url.path.startswith("/api/v1/control/"):
         request_id = request.headers.get("X-Request-ID") or getattr(
             request.state, "request_id", None
         )

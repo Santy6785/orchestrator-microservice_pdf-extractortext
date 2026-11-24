@@ -75,8 +75,13 @@ def create_app() -> FastAPI:
     app = FastAPI(title="Orquestador Microservice", version="0.1.0")
 
     # Middleware
-    app.middleware("http")(middleware.request_id_middleware)
+    # pause_middleware se registra primero (queda más interno) y
+    # request_id_middleware segundo (queda más externo, corre primero en la
+    # fase de request). Así request.state.request_id ya está seteado cuando
+    # pause_middleware evalúa la exclusión y genera el 503, respetando el
+    # contrato uniforme de errores (detail, code, request_id) de O-16.
     app.middleware("http")(middleware.pause_middleware)
+    app.middleware("http")(middleware.request_id_middleware)
 
     # Include Routers
     app.include_router(documents.router, prefix="/api/v1", tags=["documents"])
