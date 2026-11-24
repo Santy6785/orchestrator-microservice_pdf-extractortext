@@ -6,6 +6,7 @@ import os
 os.environ["EXTRACTOR_SERVICE_URL"] = "http://extractor"
 os.environ["PERSISTENCE_SERVICE_URL"] = "http://persistence:8000"
 
+import httpx
 import respx
 from fastapi.testclient import TestClient
 from httpx import Response
@@ -21,7 +22,7 @@ client = TestClient(app)
 def test_health_endpoint_integration():
     # Mock downstream /health endpoints (URLs reales de O-03)
     extractor_mock = respx.get("http://extractor/health").mock(
-        return_value=Response(200, json={"status": "healthy"})
+        return_value=Response(200, json={"status": "ok"})
     )
     persistence_mock = respx.get("http://persistence:8000/health/ready").mock(
         return_value=Response(200, json={"status": "ready", "database": "connected"})
@@ -31,7 +32,7 @@ def test_health_endpoint_integration():
     assert response.status_code == 200
     data = response.json()
     assert data["orchestrator"] == "healthy"
-    assert data["extractor"] == "healthy"
+    assert data["extractor"] == "ok"
     assert data["persistence"] == "ready"
     # Ensure both downstream services were called
     assert extractor_mock.called
@@ -39,23 +40,22 @@ def test_health_endpoint_integration():
 
 
 @respx.mock
-def test_health_persistence_unhealthy_returns_200():
-    # persistence responde 503 en /health/ready: el endpoint sigue 200 con
-    # persistence no saludable (contrato actual: "unreachable").
+def test_health_extractor_available_persistence_fails_returns_503():
+    # CASO 3 (O-18): extractor responde correctamente, persistencia falla.
+    # El endpoint devuelve HTTP 503. Extractor conserva su estado disponible
+    # y persistencia aparece como unreachable (aislamiento de fallos).
     extractor_mock = respx.get("http://extractor/health").mock(
-        return_value=Response(200, json={"status": "healthy"})
+        return_value=Response(200, json={"status": "ok"})
     )
     persistence_mock = respx.get("http://persistence:8000/health/ready").mock(
-        return_value=Response(
-            503, json={"status": "unhealthy", "database": "disconnected"}
-        )
+        side_effect=httpx.ConnectError("connection failed")
     )
 
     response = client.get("/api/v1/control/health")
-    assert response.status_code == 200
+    assert response.status_code == 503
     data = response.json()
     assert data["orchestrator"] == "healthy"
-    assert data["extractor"] == "unreachable"
+    assert data["extractor"] == "ok"
     assert data["persistence"] == "unreachable"
     assert extractor_mock.called
     assert persistence_mock.called
@@ -66,7 +66,7 @@ def test_health_persistence_does_not_call_legacy_health_route():
     # Solo se mockea /health/ready. Si el código llamara a /health de
     # persistence, respx levantaría UnmockedError y este test fallaría.
     extractor_mock = respx.get("http://extractor/health").mock(
-        return_value=Response(200, json={"status": "healthy"})
+        return_value=Response(200, json={"status": "ok"})
     )
     persistence_mock = respx.get("http://persistence:8000/health/ready").mock(
         return_value=Response(200, json={"status": "ready", "database": "connected"})
@@ -76,6 +76,50 @@ def test_health_persistence_does_not_call_legacy_health_route():
     assert response.status_code == 200
     data = response.json()
     assert data["persistence"] == "ready"
+    assert extractor_mock.called
+    assert persistence_mock.called
+
+
+@respx.mock
+def test_health_extractor_fails_persistence_available_returns_503():
+    # CASO 2 (O-18): extractor falla, persistencia responde correctamente.
+    # El endpoint devuelve HTTP 503. Extractor aparece como unreachable y
+    # persistencia conserva su estado disponible (aislamiento de fallos).
+    extractor_mock = respx.get("http://extractor/health").mock(
+        side_effect=httpx.ConnectError("connection failed")
+    )
+    persistence_mock = respx.get("http://persistence:8000/health/ready").mock(
+        return_value=Response(200, json={"status": "ready", "database": "connected"})
+    )
+
+    response = client.get("/api/v1/control/health")
+    assert response.status_code == 503
+    data = response.json()
+    assert data["orchestrator"] == "healthy"
+    assert data["extractor"] == "unreachable"
+    assert data["persistence"] == "ready"
+    assert extractor_mock.called
+    assert persistence_mock.called
+
+
+@respx.mock
+def test_health_both_dependencies_fail_returns_503():
+    # CASO 4 (O-18): extractor y persistencia fallan.
+    # El endpoint devuelve HTTP 503 y ambas dependencias aparecen como
+    # unreachable.
+    extractor_mock = respx.get("http://extractor/health").mock(
+        side_effect=httpx.ConnectError("connection failed")
+    )
+    persistence_mock = respx.get("http://persistence:8000/health/ready").mock(
+        side_effect=httpx.ConnectError("connection failed")
+    )
+
+    response = client.get("/api/v1/control/health")
+    assert response.status_code == 503
+    data = response.json()
+    assert data["orchestrator"] == "healthy"
+    assert data["extractor"] == "unreachable"
+    assert data["persistence"] == "unreachable"
     assert extractor_mock.called
     assert persistence_mock.called
 

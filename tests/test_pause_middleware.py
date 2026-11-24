@@ -159,7 +159,7 @@ def test_health_not_blocked_when_paused():
         return_value=httpx.Response(200, json={"status": "ok"})
     )
     respx.get("http://persistence:8000/health/ready").mock(
-        return_value=httpx.Response(200, json={"status": "ok"})
+        return_value=httpx.Response(200, json={"status": "ready"})
     )
 
     mw.set_pause(True)
@@ -187,7 +187,7 @@ def test_full_pause_resume_cycle():
         return_value=httpx.Response(200, json={"status": "ok"})
     )
     respx.get("http://persistence:8000/health/ready").mock(
-        return_value=httpx.Response(200, json={"status": "ok"})
+        return_value=httpx.Response(200, json={"status": "ready"})
     )
 
     _reset_pause()
