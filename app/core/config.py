@@ -15,9 +15,12 @@ class Settings(BaseSettings):
 
     Variables opcionales:
         LOG_LEVEL                  Nivel de logging (default: INFO).
-        EXTRACTOR_TIMEOUT_SECONDS  Timeout del cliente Extractor, en segundos (default: 30.0).
-        PERSISTENCE_TIMEOUT_SECONDS Timeout del cliente Persistencia, en segundos (default: 5.0).
-        HEALTH_TIMEOUT_SECONDS     Timeout de los clientes usados por /control/health, en segundos (default: 2.0).
+        EXTRACTOR_TIMEOUT_SECONDS  Timeout del cliente Extractor, en segundos
+                                   (default: 30.0).
+        PERSISTENCE_TIMEOUT_SECONDS Timeout del cliente Persistencia, en
+                                    segundos (default: 5.0).
+        HEALTH_TIMEOUT_SECONDS     Timeout de los clientes usados por
+                                   /control/health, en segundos (default: 2.0).
 
     Los timeouts deben ser mayores que 0; un valor inválido hace fallar el
     arranque con un mensaje que nombra la variable.

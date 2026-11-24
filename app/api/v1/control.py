@@ -7,6 +7,8 @@ from app.clients.persistence_client import PersistenceClient
 from app.core.config import settings
 from app.schemas.errors import ErrorResponse
 
+from .control_impl import shutdown, pause, resume, metrics
+
 router = APIRouter(prefix="/control", tags=["control"])
 
 @router.get(
@@ -26,9 +28,17 @@ async def health(request: Request) -> JSONResponse:
             extractor.get("/health"), persistence.get("/health/ready")
         )
         # Extract status field if JSON contains it
-        extractor_health = extractor_resp.get("status") if isinstance(extractor_resp, dict) else extractor_resp
-        persistence_health = persistence_resp.get("status") if isinstance(persistence_resp, dict) else persistence_resp
-    except Exception as exc:
+        extractor_health = (
+            extractor_resp.get("status")
+            if isinstance(extractor_resp, dict)
+            else extractor_resp
+        )
+        persistence_health = (
+            persistence_resp.get("status")
+            if isinstance(persistence_resp, dict)
+            else persistence_resp
+        )
+    except Exception:
         # If any downstream call fails, report unknown status
         extractor_health = "unreachable"
         persistence_health = "unreachable"
@@ -45,11 +55,6 @@ async def health(request: Request) -> JSONResponse:
         },
     )
 
-# The other control endpoints remain unchanged; they are imported from the
-# existing file. To avoid duplication we will keep them in a separate module
-# (`app/api/v1/control_impl.py`) and re-export here.
-
-from .control_impl import shutdown, pause, resume, metrics
 
 router.include_router(shutdown)
 router.include_router(pause)

@@ -92,7 +92,8 @@ async def test_post_read_timeout_single_attempt():
 @respx.mock
 @patch("app.clients.base.asyncio.sleep")
 async def test_get_503_permanent_exhausts_attempts(mock_sleep):
-    """GET con 503 permanente: se agotan MAX_ATTEMPTS y se lanza HTTPStatusError con esa respuesta."""
+    """GET con 503 permanente: se agotan MAX_ATTEMPTS y se lanza
+    HTTPStatusError con esa respuesta."""
     route = respx.get(f"{BASE_URL}/documents/1").mock(
         return_value=Response(503, json={"detail": "unavailable"})
     )
@@ -134,7 +135,8 @@ async def test_sleeps_match_backoff(mock_sleep):
 
 @respx.mock
 async def test_get_200_json_cuerpo_vacio_devuelve_texto_vacio():
-    """200 con Content-Type JSON y cuerpo vacío: no lanza JSONDecodeError, devuelve texto vacío."""
+    """200 con Content-Type JSON y cuerpo vacío: no lanza JSONDecodeError,
+    devuelve texto vacío."""
     route = respx.get(f"{BASE_URL}/documents/1").mock(
         return_value=Response(
             200, content=b"", headers={"content-type": "application/json"}
@@ -148,7 +150,8 @@ async def test_get_200_json_cuerpo_vacio_devuelve_texto_vacio():
 
 @respx.mock
 async def test_delete_204_json_cuerpo_vacio_devuelve_texto_vacio():
-    """DELETE 204 con Content-Type JSON y cuerpo vacío: no lanza JSONDecodeError, devuelve texto vacío."""
+    """DELETE 204 con Content-Type JSON y cuerpo vacío: no lanza
+    JSONDecodeError, devuelve texto vacío."""
     route = respx.delete(f"{BASE_URL}/documents/1").mock(
         return_value=Response(
             204, content=b"", headers={"content-type": "application/json"}
@@ -163,7 +166,8 @@ async def test_delete_204_json_cuerpo_vacio_devuelve_texto_vacio():
 @respx.mock
 @patch("app.clients.base.asyncio.sleep")
 async def test_delete_502_then_204_json_cuerpo_vacio_reintenta(mock_sleep):
-    """DELETE 502 luego 204 con Content-Type JSON y cuerpo vacío: reintenta y devuelve texto vacío."""
+    """DELETE 502 luego 204 con Content-Type JSON y cuerpo vacío: reintenta
+    y devuelve texto vacío."""
     route = respx.delete(f"{BASE_URL}/documents/1").mock(
         side_effect=[
             Response(502),

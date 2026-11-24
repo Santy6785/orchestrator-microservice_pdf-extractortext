@@ -324,7 +324,8 @@ async def test_base_client_empty_json_body_not_retried(mock_sleep):
 
 @respx.mock
 async def test_persistence_client_delete_document_204_json_content_type():
-    """PersistenceClient.delete_document con 204 y Content-Type JSON devuelve texto vacío."""
+    """PersistenceClient.delete_document con 204 y Content-Type JSON
+    devuelve texto vacío."""
     document_id = "doc-123"
     route = respx.delete(
         f"http://persistence:8000/api/v1/documents/{document_id}"

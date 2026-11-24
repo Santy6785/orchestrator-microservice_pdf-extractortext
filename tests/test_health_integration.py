@@ -81,7 +81,8 @@ def test_health_persistence_does_not_call_legacy_health_route():
 
 
 def test_health_clientes_usan_health_timeout(monkeypatch):
-    """El endpoint de health usa HEALTH_TIMEOUT_SECONDS, no el de extractor ni persistencia."""
+    """El endpoint de health usa HEALTH_TIMEOUT_SECONDS, no el de
+    extractor ni persistencia."""
     monkeypatch.setenv("EXTRACTOR_SERVICE_URL", "http://extractor")
     monkeypatch.setenv("PERSISTENCE_SERVICE_URL", "http://persistence:8000")
     monkeypatch.setenv("HEALTH_TIMEOUT_SECONDS", "4.0")
