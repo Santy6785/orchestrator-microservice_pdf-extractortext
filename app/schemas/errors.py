@@ -5,11 +5,20 @@ from typing import Optional
 class ErrorResponse(BaseModel):
     """Standard JSON error payload returned by the orchestrator.
 
-    Fields follow the contract defined in `docs/contratos/`.
+    Contract:
+
+        {
+          "detail": "Descripción del error",
+          "code": "error_code",
+          "request_id": "uuid"
+        }
+
+    ``existing_id`` es opcional y solo se incluye en errores de duplicación
+    de documentos.
     """
 
+    detail: str = Field(..., description="Human‑readable description of the error")
     code: str = Field(..., description="Machine‑readable error identifier")
-    message: str = Field(..., description="Human‑readable description of the error")
     request_id: Optional[str] = Field(
         None, description="Correlation ID for the request"
     )

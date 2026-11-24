@@ -75,16 +75,16 @@ class TestResponseMappingUnit:
         assert detail.id == "doc-002"
 
     def test_error_response_mapping_with_and_without_existing_id(self):
-        err = ErrorResponse(code="persistence_error", message="Fallo downstream")
+        err = ErrorResponse(code="persistence_error", detail="Fallo downstream")
         assert err.model_dump() == {
+            "detail": "Fallo downstream",
             "code": "persistence_error",
-            "message": "Fallo downstream",
-            "existing_id": None,
             "request_id": None,
+            "existing_id": None,
         }
         dup = ErrorResponse(
             code="duplicate_document",
-            message="Ya existe",
+            detail="Ya existe",
             existing_id="doc-999",
         )
         assert dup.existing_id == "doc-999"

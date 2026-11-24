@@ -3,7 +3,10 @@ import logging
 import uuid
 
 from fastapi import Request, Response
+from fastapi.responses import JSONResponse
 from starlette.status import HTTP_503_SERVICE_UNAVAILABLE
+
+from app.schemas.errors import ErrorResponse
 
 # Context variable holding the current request ID for downstream propagation.
 request_id_var: contextvars.ContextVar[str] = contextvars.ContextVar(
@@ -17,15 +20,23 @@ _pause_flag = False
 async def pause_middleware(request: Request, call_next):
     """Reject requests with 503 when the service is paused.
     The /pause and /resume endpoints toggle the global _pause_flag.
+    The error response follows the uniform JSON error contract.
     """
     if _pause_flag and request.url.path not in {
         "/api/v1/pause",
         "/api/v1/resume",
         "/api/v1/health",
     }:
-        return Response(
-            content="Service is paused",
+        request_id = request.headers.get("X-Request-ID") or getattr(
+            request.state, "request_id", None
+        )
+        return JSONResponse(
             status_code=HTTP_503_SERVICE_UNAVAILABLE,
+            content=ErrorResponse(
+                detail="Servicio temporalmente pausado",
+                code="service_paused",
+                request_id=request_id,
+            ).model_dump(),
         )
     response = await call_next(request)
     return response

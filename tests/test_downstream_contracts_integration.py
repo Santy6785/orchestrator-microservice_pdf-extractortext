@@ -38,7 +38,7 @@ def test_contract_downstream_409_duplicate_from_persistence():
         files={"file": ("doc.pdf", VALID_PDF, "application/pdf")},
     )
     assert response.status_code == 409
-    assert response.json()["detail"]["existing_id"] == "existing-409"
+    assert response.json()["existing_id"] == "existing-409"
     assert not extractor_route.called
 
 
@@ -59,8 +59,8 @@ def test_contract_downstream_404_not_found_on_get_and_delete():
 
 
 @respx.mock
-def test_contract_downstream_422_validation_error_from_extractor_and_persistence():
-    """Contrato 422: error de validación downstream se traduce a 502 Bad Gateway."""
+def test_contract_downstream_422_validation_error_from_extractor():
+    """Contrato 422: error de validación del extractor -> 422."""
     respx.get(f"{PERSISTENCE_BASE}/api/v1/documents/by-checksum/{CHECKSUM}").mock(
         return_value=Response(404, json={"detail": "not found"})
     )
@@ -72,8 +72,8 @@ def test_contract_downstream_422_validation_error_from_extractor_and_persistence
         "/api/v1/documents/upload",
         files={"file": ("doc.pdf", VALID_PDF, "application/pdf")},
     )
-    assert response.status_code == 502
-    assert response.json()["detail"]["code"] == "extractor_error"
+    assert response.status_code == 422
+    assert response.json()["code"] == "extractor_unprocessable"
 
 
 @respx.mock
@@ -94,12 +94,12 @@ def test_contract_downstream_503_returns_502_without_retry(mock_sleep):
 
     assert response.status_code == 502
     assert extract_route.call_count == 1
-    assert response.json()["detail"]["code"] == "extractor_error"
+    assert response.json()["code"] == "extractor_error"
     mock_sleep.assert_not_called()
 
 @respx.mock
-def test_contract_downstream_timeout_returns_502():
-    """Contrato timeout: ReadTimeout en extractor o persistencia responde 502."""
+def test_contract_downstream_timeout_returns_503():
+    """Contrato timeout: ReadTimeout en extractor responde 503 (matriz O-16)."""
     respx.get(f"{PERSISTENCE_BASE}/api/v1/documents/by-checksum/{CHECKSUM}").mock(
         return_value=Response(404, json={"detail": "not found"})
     )
@@ -114,5 +114,5 @@ def test_contract_downstream_timeout_returns_502():
         "/api/v1/documents/upload",
         files={"file": ("doc.pdf", VALID_PDF, "application/pdf")},
     )
-    assert response.status_code == 502
-    assert response.json()["detail"]["code"] == "extractor_error"
+    assert response.status_code == 503
+    assert response.json()["code"] == "extractor_timeout"

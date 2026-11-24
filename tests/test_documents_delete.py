@@ -93,8 +93,8 @@ def test_delete_document_persistence_500_returns_502():
 
 
 @respx.mock
-def test_delete_document_connection_error_returns_502():
-    """No deben filtrarse detalles internos de transporte al cliente."""
+def test_delete_document_connection_error_returns_503():
+    """Error de conexión de persistencia -> HTTP 503 (matriz O-16)."""
     document_id = "65f1a2b3-c4d5-e6f7-a8b9-c0d1e2f3a4b5"
     route = respx.delete(f"{PERSISTENCE_BASE}/api/v1/documents/{document_id}").mock(
         side_effect=httpx.ConnectError("connection failed")
@@ -103,19 +103,20 @@ def test_delete_document_connection_error_returns_502():
     client = _client()
     response = client.delete(f"/api/v1/documents/{document_id}")
 
-    assert response.status_code == 502
+    assert response.status_code == 503
     body = response.json()
     assert "detail" in body
+    assert body["code"] == "persistence_connection_error"
     assert route.called
 
 
 # ---------------------------------------------------------------------------
-# CASO 5 — Timeout: ReadTimeout -> orquestador 502
+# CASO 5 — Timeout: ReadTimeout -> orquestador 503 (matriz O-16)
 # ---------------------------------------------------------------------------
 
 
 @respx.mock
-def test_delete_document_read_timeout_returns_502():
+def test_delete_document_read_timeout_returns_503():
     document_id = "65f1a2b3-c4d5-e6f7-a8b9-c0d1e2f3a4b5"
     route = respx.delete(f"{PERSISTENCE_BASE}/api/v1/documents/{document_id}").mock(
         side_effect=httpx.ReadTimeout(
@@ -129,9 +130,10 @@ def test_delete_document_read_timeout_returns_502():
     client = _client()
     response = client.delete(f"/api/v1/documents/{document_id}")
 
-    assert response.status_code == 502
+    assert response.status_code == 503
     body = response.json()
     assert "detail" in body
+    assert body["code"] == "persistence_timeout"
     assert route.called
 
 

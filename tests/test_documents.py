@@ -321,8 +321,8 @@ def test_delete_document_returns_204():
 # ---------------------------------------------------------------------------
 
 
-def test_upload_extractor_readtimeout_devuelve_502_con_detail():
-    """O-15: ReadTimeout del extractor devuelve 502 sin filtrar detalles internos."""
+def test_upload_extractor_readtimeout_devuelve_503_con_detail():
+    """O-15: ReadTimeout del extractor devuelve 503 sin filtrar detalles internos."""
 
     content = b"%PDF-1.4 test"
     checksum = compute_sha256_hex(content)
@@ -337,7 +337,7 @@ def test_upload_extractor_readtimeout_devuelve_502_con_detail():
 
     try:
         with respx.mock:
-            # Persistence responde 404 (no es duplicado), permitiendo llegar al extractor.
+            # Persistence responde 404 (no es duplicado), llegando al extractor.
             persistence_route = respx.get(
                 f"http://persistence:8000/api/v1/documents/by-checksum/{checksum}"
             ).mock(return_value=Response(404))
@@ -350,9 +350,11 @@ def test_upload_extractor_readtimeout_devuelve_502_con_detail():
             files = {"file": ("test.pdf", content, "application/pdf")}
             response = client.post("/api/v1/documents/upload", files=files)
 
-            assert response.status_code == 502
+            # Matriz O-16: timeout de microservicio -> HTTP 503.
+            assert response.status_code == 503
             body = response.json()
             assert "detail" in body and body["detail"] != ""
+            assert body["code"] == "extractor_timeout"
 
             # No se filtran URLs internas ni el texto crudo de la excepción.
             assert "http://extractor" not in str(body)

@@ -101,8 +101,8 @@ def test_upload_409_delete_upload_200_flow():
     )
     body = response.json()
     assert "detail" in body
-    assert body["detail"]["code"] == "duplicate_document"
-    existing_id = body["detail"]["existing_id"]
+    assert body["code"] == "duplicate_document"
+    existing_id = body["existing_id"]
     assert existing_id == "doc-existente"
     assert checksum_route.called
     assert checksum_route.call_count == 1

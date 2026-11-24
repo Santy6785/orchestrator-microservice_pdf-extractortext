@@ -62,7 +62,7 @@ def test_duplicate_document_returns_409_without_calling_extractor():
         assert response.status_code == 409
         body = response.json()
         assert "detail" in body
-        assert body["detail"]["existing_id"] == "doc-123"
+        assert body["existing_id"] == "doc-123"
         assert checksum_route.called
         assert not extractor_route.called
 
@@ -130,9 +130,8 @@ def test_persistence_5xx_returns_502_without_calling_extractor():
 
 
 @respx.mock
-def test_persistence_connection_error_returns_502_without_calling_extractor():
-    """Caso 4: Error de comunicacion con persistencia -> HTTP 502, sin l
-    lamar al extractor."""
+def test_persistence_connection_error_returns_503_without_calling_extractor():
+    """Caso 4: Error de comunicación con persistencia -> HTTP 503."""
     for client in _client_with_real_service():
         checksum_route = respx.get(
             f"{PERSISTENCE_BASE}/api/v1/documents/by-checksum/{CHECKSUM}"
@@ -146,8 +145,9 @@ def test_persistence_connection_error_returns_502_without_calling_extractor():
             files={"file": ("test.pdf", VALID_PDF, "application/pdf")},
         )
 
-        assert response.status_code == 502
+        assert response.status_code == 503
         body = response.json()
         assert "detail" in body
+        assert body["code"] == "persistence_connection_error"
         assert checksum_route.called
         assert not extractor_route.called

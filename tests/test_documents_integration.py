@@ -74,8 +74,8 @@ def test_get_document_persistence_404_returns_404_with_detail():
 
 
 @respx.mock
-def test_get_document_persistence_connection_error_returns_502_not_404():
-    """Caso 4: Error de conexión con persistencia → HTTP 502, nunca 404."""
+def test_get_document_persistence_connection_error_returns_503_not_404():
+    """Caso 4: Error de conexión con persistencia -> HTTP 503, nunca 404."""
     document_id = "65f1a2b3-c4d5-e6f7-a8b9-c0d1e2f3a4b5"
     import httpx
 
@@ -86,9 +86,10 @@ def test_get_document_persistence_connection_error_returns_502_not_404():
     client = _client()
     response = client.get(f"/api/v1/documents/{document_id}")
 
-    assert response.status_code == 502
+    assert response.status_code == 503
     body = response.json()
     assert "detail" in body
+    assert body["code"] == "persistence_connection_error"
     assert route.called
 
 

@@ -380,7 +380,7 @@ async def test_ingestion_extraer_con_tipos_invalidos_devuelve_failed():
 
 @pytest.mark.asyncio
 async def test_ingestion_error_del_extractor_mantiene_comportamiento_de_error():
-    """Excepción en el extractor -> HTTP 502 con detalle genérico, sin filtrar interna."""
+    """Excepción en el extractor -> HTTP 502 sin filtrar interna."""
     service, _, persistence = _make_service(
         extractor_exc=RuntimeError("extractor caído")
     )
@@ -391,7 +391,7 @@ async def test_ingestion_error_del_extractor_mantiene_comportamiento_de_error():
     assert exc_info.value.status_code == 502
     detail = exc_info.value.detail
     assert detail["code"] == "extractor_error"
-    assert detail["message"] == "Error communicating with extractor service"
+    assert detail["detail"] == "Error comunicando con el servicio extractor"
     # No se filtran detalles internos de la excepción.
     assert "extractor caído" not in str(detail)
     assert persistence.registered_payload is None
@@ -431,11 +431,45 @@ async def test_ingestion_page_count_bool_devuelve_failed():
 
 
 @pytest.mark.asyncio
-async def test_ingestion_extractor_http_status_error_devuelve_failed():
-    """ExtractorClient lanza httpx.HTTPStatusError -> HTTP 502 sin registrar."""
+async def test_ingestion_extractor_http_400_translates_to_422():
+    """Extractor HTTP 400 -> HTTP 422 (matriz O-16: extractor)."""
     request = httpx.Request("POST", "http://extractor/api/v1/extract")
     response = httpx.Response(400, request=request)
     exc = httpx.HTTPStatusError("Bad Request", request=request, response=response)
+
+    service, _extractor, persistence = _make_service(extractor_exc=exc)
+    payload = _base_payload()
+
+    with pytest.raises(HTTPException) as exc_info:
+        await service.process_document(payload)
+    assert exc_info.value.status_code == 422
+    detail = exc_info.value.detail
+    assert detail["code"] == "extractor_unprocessable"
+    assert persistence.registered_payload is None
+
+
+@pytest.mark.asyncio
+async def test_ingestion_extractor_http_422_translates_to_422():
+    """Extractor HTTP 422 -> HTTP 422 (matriz O-16: extractor)."""
+    request = httpx.Request("POST", "http://extractor/api/v1/extract")
+    response = httpx.Response(422, request=request)
+    exc = httpx.HTTPStatusError("Unprocessable", request=request, response=response)
+
+    service, _extractor, persistence = _make_service(extractor_exc=exc)
+    payload = _base_payload()
+
+    with pytest.raises(HTTPException) as exc_info:
+        await service.process_document(payload)
+    assert exc_info.value.status_code == 422
+    assert persistence.registered_payload is None
+
+
+@pytest.mark.asyncio
+async def test_ingestion_extractor_http_5xx_translates_to_502():
+    """Extractor HTTP 5xx -> HTTP 502 (matriz O-16: extractor)."""
+    request = httpx.Request("POST", "http://extractor/api/v1/extract")
+    response = httpx.Response(503, request=request)
+    exc = httpx.HTTPStatusError("Unavailable", request=request, response=response)
 
     service, _extractor, persistence = _make_service(extractor_exc=exc)
     payload = _base_payload()
@@ -491,7 +525,7 @@ async def test_ingestion_extractor_ok_persistencia_503_no_documento_creado():
     assert detail is not None
     assert isinstance(detail, dict)
     assert "code" in detail
-    assert "message" in detail
+    assert "detail" in detail
 
     # No se devuelve un objeto de éxito: la excepción impide el return
     # de DocumentUploadResponse.

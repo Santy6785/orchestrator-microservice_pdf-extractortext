@@ -8,8 +8,13 @@ from fastapi import HTTPException, status
 
 from app.clients.extractor_client import ExtractorClient
 from app.clients.persistence_client import PersistenceClient
+from app.core.middleware import request_id_var
 from app.schemas.documents import DocumentUploadResponse
 from app.schemas.errors import ErrorResponse
+from app.services.downstream_errors import (
+    DownstreamErrorTranslator,
+    DownstreamService,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -48,21 +53,9 @@ class IngestionService:
                     # Document does not exist in persistence, continue with extraction.
                     pass
                 else:
-                    logger.error(
-                        "Persistence service returned unexpected status %d "
-                        "for checksum %s",
-                        exc.response.status_code,
-                        checksum,
-                    )
-                    raise HTTPException(
-                        status_code=status.HTTP_502_BAD_GATEWAY,
-                        detail=ErrorResponse(
-                            code="persistence_error",
-                            message=(
-                                f"Error communicating with persistence service: HTTP "
-                                f"{exc.response.status_code}"
-                            ),
-                        ).model_dump(),
+                    # 409, 413, 422, 5xx y otros -> traducir segun matriz O-16.
+                    raise DownstreamErrorTranslator.translate_persistence_status_error(
+                        exc
                     ) from exc
             except httpx.RequestError as exc:
                 logger.error(
@@ -70,24 +63,15 @@ class IngestionService:
                     checksum,
                     exc,
                 )
-                raise HTTPException(
-                    status_code=status.HTTP_502_BAD_GATEWAY,
-                    detail=ErrorResponse(
-                        code="persistence_error",
-                        message="Error communicating with persistence service",
-                    ).model_dump(),
+                raise DownstreamErrorTranslator.translate_communication_error(
+                    exc, DownstreamService.PERSISTENCE
                 ) from exc
             except Exception as exc:
                 logger.exception(
-                    "Unexpected error checking duplicate for checksum %s",
-                    checksum,
+                    "Unexpected error checking duplicate for checksum %s", checksum
                 )
-                raise HTTPException(
-                    status_code=status.HTTP_502_BAD_GATEWAY,
-                    detail=ErrorResponse(
-                        code="persistence_error",
-                        message="Error communicating with persistence service",
-                    ).model_dump(),
+                raise DownstreamErrorTranslator.translate_unexpected_error(
+                    DownstreamService.PERSISTENCE
                 ) from exc
             else:
                 # HTTP 200: document already exists, it is a duplicate.
@@ -98,12 +82,8 @@ class IngestionService:
                         checksum,
                         duplicate_info,
                     )
-                    raise HTTPException(
-                        status_code=status.HTTP_502_BAD_GATEWAY,
-                        detail=ErrorResponse(
-                            code="persistence_error",
-                            message="Invalid response from persistence service",
-                        ).model_dump(),
+                    raise DownstreamErrorTranslator.translate_unexpected_error(
+                        DownstreamService.PERSISTENCE
                     )
                 existing_id = duplicate_info.get("id")
                 logger.warning(
@@ -115,8 +95,9 @@ class IngestionService:
                     status_code=status.HTTP_409_CONFLICT,
                     detail=ErrorResponse(
                         code="duplicate_document",
-                        message=f"Document with checksum {checksum} already exists",
+                        detail=f"Document with checksum {checksum} already exists",
                         existing_id=existing_id,
+                        request_id=request_id_var.get() or None,
                     ).model_dump(),
                 )
 
@@ -129,14 +110,22 @@ class IngestionService:
                 filename=filename,
                 pdf_bytes=pdf_bytes,
             )
+        except httpx.HTTPStatusError as exc:
+            logger.exception("Extractor call failed")
+            raise DownstreamErrorTranslator.translate_extractor_status_error(
+                exc
+            ) from exc
+        except httpx.RequestError as exc:
+            logger.error(
+                "Extractor service communication failed: %s", exc
+            )
+            raise DownstreamErrorTranslator.translate_communication_error(
+                exc, DownstreamService.EXTRACTOR
+            ) from exc
         except Exception as exc:
             logger.exception("Extractor call failed")
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail=ErrorResponse(
-                    code="extractor_error",
-                    message="Error communicating with extractor service",
-                ).model_dump(),
+            raise DownstreamErrorTranslator.translate_unexpected_error(
+                DownstreamService.EXTRACTOR
             ) from exc
 
         # Validate the extractor response contains the expected fields.
@@ -149,7 +138,7 @@ class IngestionService:
                 status_code=status.HTTP_502_BAD_GATEWAY,
                 detail=ErrorResponse(
                     code="extractor_error",
-                    message="Extractor returned an invalid response",
+                    detail="Extractor returned an invalid response",
                 ).model_dump(),
             )
 
@@ -165,7 +154,7 @@ class IngestionService:
                 status_code=status.HTTP_502_BAD_GATEWAY,
                 detail=ErrorResponse(
                     code="extractor_error",
-                    message="Extractor response missing or invalid 'content'",
+                    detail="Extractor response missing or invalid 'content'",
                 ).model_dump(),
             )
 
@@ -182,7 +171,7 @@ class IngestionService:
                 status_code=status.HTTP_502_BAD_GATEWAY,
                 detail=ErrorResponse(
                     code="extractor_error",
-                    message="Extractor response missing or invalid 'page_count'",
+                    detail="Extractor response missing or invalid 'page_count'",
                 ).model_dump(),
             )
 
@@ -199,14 +188,23 @@ class IngestionService:
         # Register in persistence service
         try:
             registration = await self.persistence.register_document(persistence_payload)
+        except httpx.HTTPStatusError as exc:
+            logger.exception("Persistence registration failed")
+            raise DownstreamErrorTranslator.translate_persistence_status_error(
+                exc
+            ) from exc
+        except httpx.RequestError as exc:
+            logger.error(
+                "Persistence service communication failed registering document: %s",
+                exc,
+            )
+            raise DownstreamErrorTranslator.translate_communication_error(
+                exc, DownstreamService.PERSISTENCE
+            ) from exc
         except Exception as exc:
             logger.exception("Persistence registration failed")
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail=ErrorResponse(
-                    code="persistence_error",
-                    message=f"Error communicating with persistence service: {exc}",
-                ).model_dump(),
+            raise DownstreamErrorTranslator.translate_unexpected_error(
+                DownstreamService.PERSISTENCE
             ) from exc
 
         if not isinstance(registration, dict) or "id" not in registration:
@@ -218,7 +216,7 @@ class IngestionService:
                 status_code=status.HTTP_502_BAD_GATEWAY,
                 detail=ErrorResponse(
                     code="persistence_error",
-                    message="Invalid response from persistence service",
+                    detail="Invalid response from persistence service",
                 ).model_dump(),
             )
 
@@ -232,7 +230,7 @@ class IngestionService:
                 status_code=status.HTTP_502_BAD_GATEWAY,
                 detail=ErrorResponse(
                     code="persistence_error",
-                    message="Invalid document id from persistence service",
+                    detail="Invalid document id from persistence service",
                 ).model_dump(),
             )
 
@@ -246,7 +244,7 @@ class IngestionService:
                 status_code=status.HTTP_502_BAD_GATEWAY,
                 detail=ErrorResponse(
                     code="persistence_error",
-                    message=(
+                    detail=(
                         "Persistence service returned missing or invalid created_at"
                     ),
                 ).model_dump(),
@@ -297,15 +295,8 @@ class IngestionService:
                 "Persistence service returned unexpected status %d listing documents",
                 exc.response.status_code,
             )
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail=ErrorResponse(
-                    code="persistence_error",
-                    message=(
-                        f"Error communicating with persistence service: HTTP "
-                        f"{exc.response.status_code}"
-                    ),
-                ).model_dump(),
+            raise DownstreamErrorTranslator.translate_persistence_status_error(
+                exc
             ) from exc
 
         except httpx.RequestError as exc:
@@ -313,22 +304,14 @@ class IngestionService:
                 "Persistence service communication failed listing documents: %s",
                 exc,
             )
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail=ErrorResponse(
-                    code="persistence_error",
-                    message="Error communicating with persistence service",
-                ).model_dump(),
+            raise DownstreamErrorTranslator.translate_communication_error(
+                exc, DownstreamService.PERSISTENCE
             ) from exc
 
         except Exception as exc:
             logger.exception("Unexpected error listing documents")
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail=ErrorResponse(
-                    code="persistence_error",
-                    message="Error communicating with persistence service",
-                ).model_dump(),
+            raise DownstreamErrorTranslator.translate_unexpected_error(
+                DownstreamService.PERSISTENCE
             ) from exc
 
     async def get_document(self, document_id: str) -> Any:
@@ -343,24 +326,18 @@ class IngestionService:
                     "Document %s not found in persistence service",
                     document_id,
                 )
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail=f"Documento con ID {document_id} no encontrado",
+                raise DownstreamErrorTranslator._build_http_exception(
+                    status.HTTP_404_NOT_FOUND,
+                    "persistence_not_found",
+                    f"Documento con ID {document_id} no encontrado",
                 ) from exc
             logger.error(
                 "Persistence service returned unexpected status %d for document %s",
                 exc.response.status_code,
                 document_id,
             )
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail=ErrorResponse(
-                    code="persistence_error",
-                    message=(
-                        f"Error communicating with persistence service: HTTP "
-                        f"{exc.response.status_code}"
-                    ),
-                ).model_dump(),
+            raise DownstreamErrorTranslator.translate_persistence_status_error(
+                exc
             ) from exc
         except httpx.RequestError as exc:
             logger.error(
@@ -368,21 +345,13 @@ class IngestionService:
                 document_id,
                 exc,
             )
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail=ErrorResponse(
-                    code="persistence_error",
-                    message="Error communicating with persistence service",
-                ).model_dump(),
+            raise DownstreamErrorTranslator.translate_communication_error(
+                exc, DownstreamService.PERSISTENCE
             ) from exc
         except Exception as exc:
             logger.exception("Unexpected error getting document %s", document_id)
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail=ErrorResponse(
-                    code="persistence_error",
-                    message="Error communicating with persistence service",
-                ).model_dump(),
+            raise DownstreamErrorTranslator.translate_unexpected_error(
+                DownstreamService.PERSISTENCE
             ) from exc
 
     async def delete_document(self, document_id: str) -> Any:
@@ -397,9 +366,10 @@ class IngestionService:
                     "Document %s not found in persistence service for deletion",
                     document_id,
                 )
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail=f"Documento con ID {document_id} no encontrado",
+                raise DownstreamErrorTranslator._build_http_exception(
+                    status.HTTP_404_NOT_FOUND,
+                    "persistence_not_found",
+                    f"Documento con ID {document_id} no encontrado",
                 ) from exc
             logger.error(
                 "Persistence service returned unexpected status %d deleting "
@@ -407,15 +377,8 @@ class IngestionService:
                 exc.response.status_code,
                 document_id,
             )
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail=ErrorResponse(
-                    code="persistence_error",
-                    message=(
-                        f"Error communicating with persistence service: HTTP "
-                        f"{exc.response.status_code}"
-                    ),
-                ).model_dump(),
+            raise DownstreamErrorTranslator.translate_persistence_status_error(
+                exc
             ) from exc
         except httpx.RequestError as exc:
             logger.error(
@@ -423,19 +386,11 @@ class IngestionService:
                 document_id,
                 exc,
             )
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail=ErrorResponse(
-                    code="persistence_error",
-                    message="Error communicating with persistence service",
-                ).model_dump(),
+            raise DownstreamErrorTranslator.translate_communication_error(
+                exc, DownstreamService.PERSISTENCE
             ) from exc
         except Exception as exc:
             logger.exception("Unexpected error deleting document %s", document_id)
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail=ErrorResponse(
-                    code="persistence_error",
-                    message="Error communicating with persistence service",
-                ).model_dump(),
+            raise DownstreamErrorTranslator.translate_unexpected_error(
+                DownstreamService.PERSISTENCE
             ) from exc

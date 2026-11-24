@@ -135,15 +135,15 @@ async def test_ingestion_list_documents_http_status_error_translates_to_502():
 
 
 @pytest.mark.asyncio
-async def test_ingestion_list_documents_request_error_translates_to_502():
-    """httpx.RequestError desde persistencia debe traducirse a HTTPException 502."""
+async def test_ingestion_list_documents_request_error_translates_to_503():
+    """Error de conexión de persistencia -> HTTP 503 (matriz O-16)."""
     service, _persistence = _make_service(
         persistence_exc=httpx.ConnectError("connection failed")
     )
 
     with pytest.raises(HTTPException) as exc_info:
         await service.list_documents()
-    assert exc_info.value.status_code == 502
+    assert exc_info.value.status_code == 503
 
 
 @pytest.mark.asyncio
@@ -199,7 +199,8 @@ async def test_ingestion_get_document_persistence_404_translates_to_404():
         await service.get_document(DOCUMENT_ID)
     assert exc_info.value.status_code == 404
     detail = exc_info.value.detail
-    assert detail == f"Documento con ID {DOCUMENT_ID} no encontrado"
+    assert detail["detail"] == f"Documento con ID {DOCUMENT_ID} no encontrado"
+    assert detail["code"] == "persistence_not_found"
     assert persistence.get_calls == [DOCUMENT_ID]
 
 
@@ -215,15 +216,15 @@ async def test_ingestion_get_document_http_status_error_translates_to_502():
 
 
 @pytest.mark.asyncio
-async def test_ingestion_get_document_request_error_translates_to_502():
-    """httpx.RequestError desde persistencia debe traducirse a HTTPException 502."""
+async def test_ingestion_get_document_request_error_translates_to_503():
+    """Error de conexión de persistencia -> HTTP 503 (matriz O-16)."""
     service, _persistence = _make_service(
         persistence_exc=httpx.ConnectError("connection failed")
     )
 
     with pytest.raises(HTTPException) as exc_info:
         await service.get_document(DOCUMENT_ID)
-    assert exc_info.value.status_code == 502
+    assert exc_info.value.status_code == 503
 
 
 # ---------------------------------------------------------------------------
@@ -251,7 +252,8 @@ async def test_ingestion_delete_document_persistence_404_translates_to_404():
         await service.delete_document(DOCUMENT_ID)
     assert exc_info.value.status_code == 404
     detail = exc_info.value.detail
-    assert detail == f"Documento con ID {DOCUMENT_ID} no encontrado"
+    assert detail["detail"] == f"Documento con ID {DOCUMENT_ID} no encontrado"
+    assert detail["code"] == "persistence_not_found"
     assert persistence.delete_calls == [DOCUMENT_ID]
 
 
@@ -267,12 +269,12 @@ async def test_ingestion_delete_document_http_status_error_translates_to_502():
 
 
 @pytest.mark.asyncio
-async def test_ingestion_delete_document_request_error_translates_to_502():
-    """httpx.RequestError desde persistencia debe traducirse a HTTPException 502."""
+async def test_ingestion_delete_document_request_error_translates_to_503():
+    """Error de conexión de persistencia -> HTTP 503 (matriz O-16)."""
     service, _persistence = _make_service(
         persistence_exc=httpx.ConnectError("connection failed")
     )
 
     with pytest.raises(HTTPException) as exc_info:
         await service.delete_document(DOCUMENT_ID)
-    assert exc_info.value.status_code == 502
+    assert exc_info.value.status_code == 503
