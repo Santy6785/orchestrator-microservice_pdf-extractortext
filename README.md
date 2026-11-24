@@ -26,4 +26,9 @@ In the shared Docker Compose network (`${DOCKER_NETWORK_NAME:-pdf-extractortext_
 
 For local development outside Docker (e.g., running `uvicorn` on the host), configure `.env` with the corresponding host-mapped URLs and ports. See `docs/conectividad.md` for full endpoint mappings, error matrices, and timeouts.
 
-## Repository layout
+## Startup Order
+
+To ensure downstream dependencies are ready before receiving traffic, the system services must be started in the following order:
+
+```text
+persistencia → extractor → orquestador → front
