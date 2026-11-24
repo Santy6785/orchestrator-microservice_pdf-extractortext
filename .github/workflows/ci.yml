@@ -19,9 +19,7 @@ jobs:
           python-version: '3.12'
 
       - name: Install uv
-        run: |
-          curl -LsSf [https://github.com/astral-sh/uv/releases/latest/download/uv-installer.sh](https://github.com/astral-sh/uv/releases/latest/download/uv-installer.sh) | sh
-          echo "${HOME}/.local/bin:${HOME}/.cargo/bin" >> $GITHUB_PATH
+        uses: astral-sh/setup-uv@v5
 
       - name: Install dependencies
         run: uv sync --extra dev --frozen
