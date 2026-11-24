@@ -1,85 +1,173 @@
 # Registro de Decisiones de Arquitectura (ADR) - Orquestador
 
-## ADR-001: Mecanismo de resolución y descubrimiento de microservicios
+Este documento registra las decisiones de arquitectura (**D1–D9**) adoptadas para el microservicio **Orquestador** (`orchestrator-microservice_pdf-extractortext`).
 
-- **Estado:** Aceptado (Alineado con el usuario)
-- **Fecha:** 2026-10-19
-- **Contexto:**
-  Existía un conflicto entre la mención de HashiCorp Consul en `microservicios.txt` y la especificación de URLs por variables de entorno. Traefik ya actúa como proxy inverso y balanceador de carga.
-- **Alternativas consideradas:**
-  1. *HashiCorp Consul:* Servicio centralizado de descubrimiento dinámico. Descartado por añadir sobrecarga operacional excesiva, complejidad innecesaria y latencia de resolución para un despliegue de 4 contenedores.
-  2. *URLs directas por variables de entorno con DNS de Docker / Traefik:* El orquestador recibe `EXTRACTOR_SERVICE_URL` y `PERSISTENCE_SERVICE_URL`.
-- **Decisión:**
-  Se adopta la **Opción 2** (URLs directas por variables de entorno). Traefik y la red de Docker Compose gestionan el balanceo y la resolución interna.
-- **Consecuencias:**
-  - *Positivas:* Arquitectura simple, determinista, sin dependencias externas pesadas, compatible con `microservicios.txt` y el alcance acordado.
-  - *Negativas:* Si las instancias cambian dinámicamente fuera de Docker/Traefik, requeriría actualización de configuración.
+## Resumen de Decisiones
+
+| ID | ADR | Título | Estado |
+|----|-----|--------|--------|
+| **D1** | ADR-001 | Mecanismo de resolución y descubrimiento de microservicios | Aprobado |
+| **D2** | ADR-002 | Delimitación de responsabilidades en Checksum y Duplicados (Fail-Fast) | Aprobado |
+| **D3** | ADR-003 | Política de inmutabilidad WORM y diferimiento de `PUT /api/v1/documents/{id}` a v1.1 | Aprobado |
+| **D4** | ADR-004 | Unificación de configuración en `app/core/config.py` sin credenciales de DB | Aprobado |
+| **D5** | ADR-005 | Retiro del endpoint legacy `POST /api/v1/documents/` (`PlainTextResponse`) | Aprobado |
+| **D6** | ADR-006 | Manejo de fallo de persistencia tras extracción exitosa (`HTTP 502 Bad Gateway`) | Aprobado |
+| **D7** | ADR-007 | Clientes HTTP resilientes con timeouts, reintentos y propagación de `X-Request-ID` | Aprobado |
+| **D8** | ADR-008 | Control de admisión (`PauseMiddleware`) y endpoints de ciclo de vida operativo | Aprobado |
+| **D9** | ADR-009 | Formato uniforme de errores JSON (`ErrorResponse`) y configuración explícita de CORS | Aprobado |
 
 ---
 
-## ADR-002: Delimitación de responsabilidades en Checksum y Duplicados
+## D1 (ADR-001): Mecanismo de resolución y descubrimiento de microservicios
 
-- **Estado:** Aceptado
+- **Estado:** Aprobado
 - **Fecha:** 2026-10-19
 - **Contexto:**
-  El monolito calculaba el checksum en el extractor y chequeaba duplicados a través del repositorio de persistencia.
+  Existía una discrepancia entre el uso de HashiCorp Consul como service discovery dinámico y la configuración mediante URLs directas por variables de entorno. En el despliegue del sistema, Traefik actúa como proxy inverso y Docker Compose provee resolución DNS interna entre contenedores.
 - **Alternativas consideradas:**
-  1. *Dejar todo al extractor:* El orquestador envía el PDF crudo al extractor; el extractor calcula checksum y extrae texto; luego el orquestador intenta guardar en persistencia. Si es duplicado, se desperdiciaron CPU y RAM de extracción.
-  2. *Cálculo temprano en orquestador + verificación con persistencia (Fail-Fast):* El orquestador calcula el hash SHA-256 de los bytes del PDF en memoria (~1 ms para 10 MB) y consulta a persistencia (`GET /documents/checksum/{checksum}`). Si ya existe, responde 409 Conflict de inmediato sin invocar al extractor.
+  1. *HashiCorp Consul:* Servicio centralizado de descubrimiento dinámico. Descartado por introducir complejidad operativa excesiva, dependencias adicionales y latencia de resolución innecesaria para un despliegue acotado de microservicios.
+  2. *URLs directas por variables de entorno con DNS de Docker / Traefik:* El orquestador recibe `EXTRACTOR_SERVICE_URL` y `PERSISTENCE_SERVICE_URL` por entorno.
+- **Decisión:**
+  Se adopta la **Opción 2** (URLs directas por variables de entorno). Traefik y la red interna de Docker Compose gestionan el enrutamiento y la resolución de nombres.
+- **Consecuencias:**
+  - *Positivas:* Arquitectura simple, determinista, sin dependencias externas pesadas y alineada con el despliegue en contenedores.
+  - *Negativas:* Cambios de topología fuera de Docker/Traefik requieren actualizar las variables de entorno del servicio.
+
+---
+
+## D2 (ADR-002): Delimitación de responsabilidades en Checksum y Duplicados (Fail-Fast)
+
+- **Estado:** Aprobado
+- **Fecha:** 2026-10-19
+- **Contexto:**
+  En el monolito original el checksum se calculaba durante la extracción y luego se consultaba duplicidad en base de datos. En una arquitectura distribuida, enviar un PDF grande al servicio Extractor antes de verificar si ya fue procesado desperdicia red, CPU y memoria.
+- **Alternativas consideradas:**
+  1. *Delegar checksum y validación al Extractor:* El orquestador envía siempre el PDF al extractor y luego intenta persistir. Descartado por alto costo de procesamiento en archivos duplicados.
+  2. *Cálculo temprano en Orquestador + verificación con Persistencia (Fail-Fast):* El orquestador calcula el hash SHA-256 en memoria (~1 ms) y consulta a Persistencia (`GET /api/v1/documents/by-checksum/{checksum}`). Si ya existe, responde `409 Conflict` de inmediato sin invocar al Extractor.
 - **Decisión:**
   Se adopta la **Opción 2**:
-  - Orquestador: calcula SHA-256 en memoria y coordina el flujo.
-  - Persistencia: expone consulta de existencia por checksum y asegura unicidad estricta en MongoDB (índice único).
-  - Extractor: solo procesa PDFs que ya han sido validados como únicos.
+  - **Orquestador:** calcula el SHA-256 en memoria y coordina la verificación temprana.
+  - **Persistencia:** expone la consulta por checksum y garantiza la unicidad estricta en base de datos mediante índice único.
+  - **Extractor:** solo procesa documentos PDF previamente validados como no duplicados.
 - **Consecuencias:**
-  - *Positivas:* Ahorro drástico de recursos de CPU y red en archivos duplicados.
-  - *Negativas:* Una llamada HTTP adicional a persistencia en archivos válidos (mitigada por la baja latencia de red interna).
+  - *Positivas:* Ahorro significativo de CPU y ancho de banda ante envíos duplicados.
+  - *Negativas:* Agrega una consulta HTTP liviana a Persistencia en el camino feliz (mitigada por la baja latencia de la red interna).
 
 ---
 
-## ADR-003: Unificación de Configuración en `app/core/config.py`
+## D3 (ADR-003): Política de inmutabilidad WORM y diferimiento de `PUT /api/v1/documents/{id}` a v1.1
 
-- **Estado:** Aceptado
+- **Estado:** Aprobado
 - **Fecha:** 2026-10-19
 - **Contexto:**
-  El monolito tenía dos módulos de configuración solapados: `Settings` en `app/config/settings.py` y el protocolo `ConfigService` en `app/application/config_service.py`, usados de forma inconsistente.
+  Durante la definición de contratos REST entre el Orquestador y el servicio de Persistencia se evaluó exponer operaciones de actualización completa de documentos mediante `PUT /api/v1/documents/{id}`. Sin embargo, el modelo de almacenamiento de documentos extraídos responde a una política WORM (*Write Once, Read Many*) para preservar la integridad entre el archivo PDF original, su checksum SHA-256 y el texto extraído.
+- **Alternativas consideradas:**
+  1. *Exponer `PUT /api/v1/documents/{id}` en v1.0:* Permitiría mutar texto o metadatos posteriores a la ingesta, rompiendo la consistencia WORM y obligando a implementar versionado o re-cálculo de hashes en v1.0.
+  2. *Aplicar política WORM en v1.0 y diferir la edición a v1.1:* Mantener los documentos inmutables tras su creación (admitiendo únicamente lectura y eliminación) y posponer la edición controlada a una iteración futura (`v1.1`).
 - **Decisión:**
-  Unificar en `app/core/config.py` con una clase `Settings` basada en `pydantic-settings` (usando `SettingsConfigDict` de Pydantic V2). Descartar `ConfigService` en el orquestador.
+  Se adopta la **Opción 2**. Se establece la política **WORM (Write Once, Read Many)** para la versión v1.0 y se retira `PUT /api/v1/documents/{id}` del orquestador (documentado en `docs/contratos/put-document-by-id.md`), difiriendo la edición de documentos a la versión `v1.1`.
 - **Consecuencias:**
-  - *Positivas:* Código limpio, idiomático en FastAPI, testing desacoplado mediante `app.dependency_overrides[get_settings]`.
+  - *Positivas:* Garantiza inmutabilidad e integridad referencial entre checksum y texto extraído en v1.0; simplifica el contrato entre Orquestador y Persistencia.
+  - *Negativas:* Los clientes que necesiten corregir un documento en v1.0 deben eliminarlo (`DELETE`) y volver a subirlo (`POST /upload`).
+
+---
+
+## D4 (ADR-004): Unificación de configuración en `app/core/config.py` sin credenciales de DB
+
+- **Estado:** Aprobado
+- **Fecha:** 2026-10-19
+- **Contexto:**
+  El monolito mantenía dos mecanismos solapados de configuración (`Settings` y el protocolo `ConfigService`) con variables acopladas directamente a MongoDB. En el nuevo diseño, el Orquestador es completamente stateless y no debe tener acceso ni conocimiento de la base de datos.
+- **Alternativas consideradas:**
+  1. *Mantener `ConfigService` y variables de MongoDB por compatibilidad:* Mantiene acoplamiento innecesario y código duplicado.
+  2. *Centralizar en `app/core/config.py` con `pydantic-settings` (`SettingsConfigDict`):* Definir una única clase `Settings` con URLs de microservicios downstream (`EXTRACTOR_SERVICE_URL`, `PERSISTENCE_SERVICE_URL`), timeouts, reintentos, tamaño máximo de archivo y nivel de logging, eliminando toda referencia a bases de datos.
+- **Decisión:**
+  Se adopta la **Opción 2**. Se descarta `ConfigService` y se centraliza la configuración en `app/core/config.py` usando Pydantic V2.
+- **Consecuencias:**
+  - *Positivas:* Código limpio e idiomático en FastAPI, aislamiento total respecto de la capa de datos y inyección de dependencias sencilla en tests mediante `dependency_overrides`.
   - *Negativas:* Ninguna.
 
 ---
 
-## ADR-004: Retiro del endpoint legacy `POST /api/v1/documents/` (PlainTextResponse)
+## D5 (ADR-005): Retiro del endpoint legacy `POST /api/v1/documents/` (`PlainTextResponse`)
 
-- **Estado:** Aceptado
+- **Estado:** Aprobado
 - **Fecha:** 2026-10-19
 - **Contexto:**
-  El monolito exponía `POST /api/v1/documents/` devolviendo un archivo `.txt` descargable (`PlainTextResponse`), con comentarios que afirmaban falsamente que `frontend/index.html` lo consumía. La inspección del código real del frontend demostró que consume `POST /api/v1/documents/upload` esperando JSON. Además, `microservicios.txt` exige estrictamente *"comunicación por JSON mediante HTTP REST"*.
+  El monolito exponía `POST /api/v1/documents/` devolviendo texto plano (`PlainTextResponse`) además de `POST /api/v1/documents/upload` con respuesta JSON. El análisis del frontend confirmó que únicamente consume `/upload` esperando JSON, y la especificación de microservicios exige comunicación uniforme por JSON sobre HTTP REST.
 - **Alternativas consideradas:**
-  1. *Mantener `POST /api/v1/documents/` en el orquestador:* Contradice el estándar JSON de microservicios y mantiene código muerto que ningún cliente consume.
-  2. *Retirar `POST /api/v1/documents/` y canalizar toda subida por `POST /api/v1/documents/upload`:* Mantiene la uniformidad JSON y preserva el contrato real con el frontend.
+  1. *Mantener ambos endpoints:* Conserva código muerto y rompe la uniformidad de contratos JSON del orquestador.
+  2. *Retirar `POST /api/v1/documents/` y unificar la ingesta en `POST /api/v1/documents/upload`:* Estandariza las respuestas en formato JSON (`DocumentResponse`).
 - **Decisión:**
-  Se adopta la **Opción 2**. El endpoint legacy de texto plano queda descartado en la migración a microservicios.
+  Se adopta la **Opción 2**. El endpoint legacy de texto plano queda retirado definitivamente en el microservicio Orquestador.
 - **Consecuencias:**
-  - *Positivas:* 100% de comunicación JSON uniforme en el orquestador, eliminación de código muerto.
-  - *Negativas:* Clientes hipotéticos de terceros (no presentes en el repositorio) que dependan de `.txt` requerirían actualizar su URL a `/upload` y leer JSON.
+  - *Positivas:* 100% de comunicación JSON uniforme en la API pública del orquestador y eliminación de código muerto.
+  - *Negativas:* Cualquier consumidor externo hipotético que esperara `.txt` directo debe consumir `/api/v1/documents/upload` y leer el campo `extracted_text` del JSON.
+
 ---
 
-## ADR-005: Manejo de fallo de persistencia tras la extracción de texto
+## D6 (ADR-006): Manejo de fallo de persistencia tras extracción exitosa (`HTTP 502 Bad Gateway`)
 
-- **Estado:** Aceptado
+- **Estado:** Aprobado
 - **Fecha:** 2026-11-21
 - **Contexto:**
-  El orquestador coordina la extracción de un PDF a través del servicio Extractor y, posteriormente, solicita el registro del documento al servicio de Persistencia. Extractor y Persistencia son servicios independientes, y el orquestador no es responsable de almacenar documentos por su cuenta. Si el extractor responde correctamente pero Persistencia falla al registrar el documento, no debe quedar estado a medias ni informarse al cliente un éxito sin confirmación de persistencia.
+  El orquestador coordina primero la extracción de texto mediante Extractor y luego el almacenamiento mediante Persistencia. Si Extractor responde exitosamente pero Persistencia falla al guardar el registro, el cliente no debe recibir una confirmación exitosa de un documento que no quedó persistido.
 - **Alternativas consideradas:**
-  1. *Propagar el error de Persistencia tal cual al cliente:* Descartado porque el contrato del orquestador para `POST /api/v1/documents/upload` estandariza el uso de HTTP 502 Bad Gateway para fallos de comunicación con servicios downstream tras agotar los reintentos del cliente HTTP.
-  2. *Intentar persistir parcialmente o guardar estado local en el orquestador:* Descartado porque el orquestador no debe mantener estado de persistencia local ni crear registros parciales.
+  1. *Propagar el código de estado crudo de Persistencia o guardar estado local temporal:* Rompe la uniformidad del contrato de errores downstream del orquestador o viola su naturaleza stateless.
+  2. *Responder `HTTP 502 Bad Gateway` con `ErrorResponse` sin estado local ni rollback:* Considerar exitoso el flujo únicamente cuando Persistencia confirma el alta; ante fallo downstream tras agotar reintentos, registrar el error y devolver `502 Bad Gateway`.
 - **Decisión:**
-  Se adopta que el documento se considera exitosamente procesado y registrado únicamente cuando Persistencia confirma el registro. Si la extracción fue exitosa pero Persistencia falla, el orquestador no devuelve un éxito. Se devuelve un HTTP 502 Bad Gateway, manteniendo el formato de error del proyecto (`ErrorResponse` con campos `code` y `message` dentro de `detail`), y se registra el fallo en los logs. No se implementan mecanismos de rollback o compensación porque el orquestador no debe mantener estado de persistencia local ni crear registros parciales.
+  Se adopta la **Opción 2**. El orquestador devuelve `HTTP 502 Bad Gateway` siguiendo el esquema estándar `ErrorResponse` (`code` y `message` dentro de `detail`), sin almacenar estado local ni ejecutar mecanismos de compensación sobre Extractor.
 - **Consecuencias:**
-  - *Positivas:* El cliente recibe una respuesta de error y puede saber que el procesamiento no terminó exitosamente; se evita informar un documento como creado cuando no existe confirmación de Persistencia; se mantiene la separación de responsabilidades entre orquestador, extractor y persistencia.
-  - *Negativas:* Una eventual estrategia de recuperación o reintento del cliente queda fuera del alcance de esta decisión; el efecto colateral de que Extractor ya haya procesado el PDF no es deshecho por el orquestador.
+  - *Positivas:* Evita falsos positivos de creación ante el cliente y mantiene estrictamente la separación de responsabilidades entre servicios.
+  - *Negativas:* El procesamiento realizado por Extractor en ese intento no se revierte y el cliente debe reintentar la operación.
+
 ---
 
+## D7 (ADR-007): Clientes HTTP resilientes con timeouts, reintentos y propagación de `X-Request-ID`
+
+- **Estado:** Aprobado
+- **Fecha:** 2026-10-25
+- **Contexto:**
+  La comunicación entre el Orquestador, Extractor y Persistencia ocurre sobre red HTTP. Sin timeouts acotados ni reintentos ante fallos transitorios, una demora o caída momentánea de un servicio downstream puede bloquear workers o provocar errores evitables, además de dificultar la trazabilidad distribuida entre logs de distintos contenedores.
+- **Alternativas consideradas:**
+  1. *Llamadas `httpx` directas en cada cliente sin capa común:* Genera duplicación de manejo de errores, ausencia de backoff y pérdida de correlación de peticiones.
+  2. *Clase base `BaseClient` (`app/clients/base.py`) sobre `httpx.AsyncClient`:* Centraliza timeouts configurables, reintentos con backoff exponencial para errores de red/5xx y propagación automática de la cabecera `X-Request-ID` desde el contexto de la petición.
+- **Decisión:**
+  Se adopta la **Opción 2**. Tanto `ExtractorClient` como `PersistenceClient` heredan de `BaseClient`, unificando la política de resiliencia y trazabilidad.
+- **Consecuencias:**
+  - *Positivas:* Mayor tolerancia a fallos transitorios de red, prevención de bloqueos indefinidos y correlación de logs end-to-end mediante `X-Request-ID`.
+  - *Negativas:* Incrementa ligeramente la latencia máxima en escenarios donde se agotan todos los reintentos configurados.
+
+---
+
+## D8 (ADR-008): Control de admisión (`PauseMiddleware`) y endpoints de ciclo de vida operativo
+
+- **Estado:** Aprobado
+- **Fecha:** 2026-10-25
+- **Contexto:**
+  La especificación operativa del sistema requiere controlar el ciclo de vida del microservicio en entornos orquestados (pausar tráfico entrante sin matar procesos activos, reanudar servicio, iniciar apagado controlado y verificar salud real de dependencias).
+- **Alternativas consideradas:**
+  1. *Depender únicamente de señales de proceso del contenedor (`SIGTERM`):* No permite pausar admisión temporalmente manteniendo activos los endpoints de control ni exponer estado de salud compuesto.
+  2. *Middleware de estado (`PauseMiddleware`) + endpoints `/api/v1/health`, `/pause`, `/resume`, `/shutdown` y `/metrics`:* Intercepta peticiones entrantes cuando el flag de pausa/apagado está activo devolviendo `503 Service Unavailable` (excepto rutas de control), mientras `/health` verifica la conectividad real hacia Extractor y Persistencia.
+- **Decisión:**
+  Se adopta la **Opción 2**. Se implementa el middleware de control de admisión junto con los endpoints operativos en `app/api/v1/control.py`.
+- **Consecuencias:**
+  - *Positivas:* Permite mantenimiento y drenado seguro de peticiones sin pérdida de tráfico en vuelo y brinda visibilidad real del estado de dependencias a Traefik/Docker.
+  - *Negativas:* Requiere mantener estado en memoria del flag de pausa por instancia de proceso.
+
+---
+
+## D9 (ADR-009): Formato uniforme de errores JSON (`ErrorResponse`) y configuración explícita de CORS
+
+- **Estado:** Aprobado
+- **Fecha:** 2026-10-25
+- **Contexto:**
+  En el monolito coexistían respuestas de error heterogéneas (excepciones HTTP de FastAPI, errores de validación de Pydantic y trazas no estructuradas) junto con políticas CORS permisivas. Los consumidores del orquestador (frontend y clientes REST) requieren un contrato de error predecible y orígenes CORS controlados por configuración.
+- **Alternativas consideradas:**
+  1. *Mantener el manejo de excepciones por defecto de FastAPI:* Produce formatos distintos según el tipo de fallo (`422` vs `500` vs `HTTPException`) y omite contexto de trazabilidad.
+  2. *Manejadores globales de excepciones hacia `ErrorResponse` + CORS parametrizado en `Settings`:* Estandariza todas las respuestas de error en un esquema JSON consistente (`code`, `message`, `request_id`) y configura `CORSMiddleware` a partir de variables de entorno.
+- **Decisión:**
+  Se adopta la **Opción 2**. Todas las excepciones de dominio, downstream, HTTP y validación se traducen al formato uniforme `ErrorResponse` y los orígenes CORS se definen explícitamente vía configuración.
+- **Consecuencias:**
+  - *Positivas:* Contrato de errores consistente y fácil de consumir por el frontend; mejora en seguridad y observabilidad al incluir `request_id` en cada error.
+  - *Negativas:* Ninguna.
