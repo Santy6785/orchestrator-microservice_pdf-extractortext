@@ -1,4 +1,4 @@
-﻿import asyncio
+import asyncio
 import logging
 import os
 import signal
@@ -21,7 +21,9 @@ def _send_termination_signal() -> None:
     os.kill(os.getpid(), sig)
 
 
-async def _drain_and_terminate(grace_period_seconds: float = GRACE_PERIOD_SECONDS) -> None:
+async def _drain_and_terminate(
+    grace_period_seconds: float = GRACE_PERIOD_SECONDS,
+) -> None:
     deadline = time.monotonic() + grace_period_seconds
     while middleware.get_active_requests() > 0 and time.monotonic() < deadline:
         await asyncio.sleep(POLL_INTERVAL_SECONDS)
@@ -68,7 +70,7 @@ async def shutdown_endpoint(
         content={
             "status": "shutting_down",
             "active_requests": active,
-            "message": "Apagado seguro iniciado. Esperando finalizacion de peticiones en curso.",
+            "message": "Apagado seguro iniciado. Esperando finalizacion de peticiones en curso."
         },
     )
 
@@ -114,7 +116,7 @@ async def resume_endpoint(request: Request) -> JSONResponse:
             status_code=status.HTTP_409_CONFLICT,
             detail={
                 "code": "conflict",
-                "detail": "No se puede reanudar: el servicio esta en proceso de apagado.",
+                "detail": "No se puede reanudar: el servicio esta en proceso de apagado."
             },
         )
     middleware.set_pause(False)
