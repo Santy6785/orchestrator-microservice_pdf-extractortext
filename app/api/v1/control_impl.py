@@ -70,7 +70,7 @@ async def shutdown_endpoint(
         content={
             "status": "shutting_down",
             "active_requests": active,
-            "message": "Apagado seguro iniciado. Esperando finalizacion de peticiones en curso."
+            "message": "Apagado seguro iniciado.",
         },
     )
 
@@ -116,7 +116,7 @@ async def resume_endpoint(request: Request) -> JSONResponse:
             status_code=status.HTTP_409_CONFLICT,
             detail={
                 "code": "conflict",
-                "detail": "No se puede reanudar: el servicio esta en proceso de apagado."
+                "detail": "No se puede reanudar: servicio en apagado.",
             },
         )
     middleware.set_pause(False)
