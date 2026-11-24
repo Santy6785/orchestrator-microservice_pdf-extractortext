@@ -4,46 +4,31 @@
 
 ## Overview
 
-This microservice receives PDF documents, forwards them to the **Extractor** service, and coordinates persistence via the **Persistence** service.  It provides a thin HTTP API that is stateless and relies on environment‑variable service discovery.
+This microservice receives PDF documents, forwards them to the **Extractor** service, and coordinates persistence via the **Persistence** service. It provides a thin HTTP API that is stateless and relies on environment‑variable service discovery.
 
 Key features:
 - FastAPI with async request‑ID propagation and pause handling middleware.
 - Clean contract‑first design (see `docs/contratos/`).
+- Architecture Decision Records (`docs/decisiones.md`) and connectivity guide (`docs/conectividad.md`).
 - Comprehensive test suite (unit & integration).
 - Multi‑stage Docker build using **uv**.
 - Simple `build.sh` script that lints, runs tests, and builds the Docker image.
 
-## Repository layout
+## Internal URLs & Ports
 
-```
-orchestrator-microservice_pdf-extractortext/
-├─ app/                     # FastAPI application code
-│   ├─ api/v1/              # Routers (documents, control)
-│   ├─ core/                # Config, logging, middleware
-│   ├─ dependencies.py       # DI helpers
-│   └─ main.py               # Application factory
-├─ docs/contratos/          # OpenAPI contract files (markdown)
-├─ tests/                   # Pytest suite
-├─ Dockerfile               # Multi‑stage build
-├─ docker-compose.yml       # Service definition for local dev
-├─ build.sh                 # Lint → test → Docker build
-├─ .gitignore               # Standard ignore patterns
-└─ README.md                # <‑‑ this file
-```
+In the shared Docker Compose network (`${DOCKER_NETWORK_NAME:-pdf-extractortext_pdf-network}`), the orchestrator and its downstream dependencies communicate using internal container hostnames and ports:
 
-## Getting started (local)
+| Service | Container / Host | Internal Port | Internal URL | External / Routing |
+|---------|------------------|---------------|--------------|--------------------|
+| **Orquestador** | `orchestrator` | `8000` | `http://orchestrator:8000` | `https://universidad.localhost/api` (via Traefik) |
+| **Extractor** | `extractor` | `80` | `http://extractor` | Internal network only (`EXTRACTOR_SERVICE_URL`) |
+| **Persistencia** | `persistence` | `8000` | `http://persistence:8000` | Internal network only (`PERSISTENCE_SERVICE_URL`) |
 
-```bash
-# Clone the repo and cd into the microservice
-git clone <repo-url>
-cd orchestrator-microservice_pdf-extractortext
+For local development outside Docker (e.g., running `uvicorn` on the host), configure `.env` with the corresponding host-mapped URLs and ports. See `docs/conectividad.md` for full endpoint mappings, error matrices, and timeouts.
 
-# Create a virtual environment (optional) – the project uses uv
-python -m venv .venv
-source .venv/bin/activate  # on Windows: .venv\Scripts\activate
+## Startup Order
 
-# Install dependencies via uv (includes dev deps)
-uv sync --frozen
+To ensure downstream dependencies are ready before receiving traffic, the system services must be started in the following order:
 
 # Run the API (development server)
 uvicorn app.main:app --reload
@@ -134,3 +119,5 @@ It aborts on the first failure, ensuring that only clean, tested code is contain
 ## License
 
 MIT License – see `LICENSE` file.
+```text
+persistencia → extractor → orquestador → front
