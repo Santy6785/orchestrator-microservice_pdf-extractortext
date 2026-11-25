@@ -1,6 +1,8 @@
 import uuid
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Path, Query, UploadFile, status
+from fastapi.responses import Response
 
 from app.dependencies import get_ingestion_service
 from app.schemas.documents import (
@@ -92,6 +94,42 @@ async def get_document(
     PersistenceClient.GET /api/v1/documents/{document_id}.
     """
     return await ingestion_service.get_document(str(document_id))
+
+
+@router.get(
+    "/{document_id}/download",
+    status_code=status.HTTP_200_OK,
+    responses={
+        404: {"model": ErrorResponse},
+        502: {"model": ErrorResponse},
+        503: {"model": ErrorResponse},
+    },
+    summary="Descargar el texto extraído de un documento como archivo Markdown",
+)
+async def download_document(
+    document_id: Annotated[str, Path(description="ID único del documento")],
+    ingestion_service: IngestionService = Depends(get_ingestion_service),
+):
+    """Descarga el texto extraído de un documento como archivo .md.
+
+    Obtiene el documento desde persistencia y lo devuelve como adjunto
+    con Content-Disposition para descarga directa en el navegador.
+    """
+    document = await ingestion_service.get_document(document_id)
+
+    extracted_text = document.get("extracted_text", "")
+    filename = document.get("filename", document_id)
+    base_name = filename.replace(".pdf", "", 1) if filename.lower().endswith(".pdf") else filename
+    download_filename = f"{base_name}.md"
+
+    content = extracted_text or ""
+    return Response(
+        content=content,
+        media_type="text/markdown;charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="{download_filename}"',
+        },
+    )
 
 
 @router.delete(
