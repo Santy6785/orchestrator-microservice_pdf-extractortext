@@ -8,6 +8,8 @@ services:
       - PERSISTENCE_SERVICE_URL=http://persistence:8000
     expose:
       - "8000"
+    stop_signal: SIGTERM
+    stop_grace_period: 20s
     networks:
       - shared_network
     labels:

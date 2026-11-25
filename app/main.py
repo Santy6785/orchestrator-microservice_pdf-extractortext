@@ -1,3 +1,8 @@
+from contextlib import asynccontextmanager
+from typing import AsyncGenerator
+
+import asyncio
+
 from fastapi import FastAPI, HTTPException, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
@@ -5,12 +10,24 @@ from fastapi.responses import JSONResponse
 import logging
 
 from app.core import logging as core_logging, middleware
+from app.core.signals import register_signal_handlers
 from app.api.v1 import documents, control
 from app.schemas.errors import ErrorResponse
 
 core_logging.configure_logging()
 
 logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    """Registra manejadores de señal al arrancar y cede el control al shutdown."""
+    loop = asyncio.get_event_loop()
+    register_signal_handlers(loop, grace_period_seconds=20.0)
+    logger.info("Signal handlers registered for graceful shutdown")
+    yield
+    logger.info("Orchestrator lifespan shutdown complete")
+
 
 # Mapeo de códigos de estado HTTP a códigos de error legibles por máquina.
 _STATUS_CODE_TO_ERROR_CODE = {
@@ -72,7 +89,11 @@ def create_app() -> FastAPI:
     - Configures logging based on environment variables.
     - Sets global exception handlers returning JSON error payloads.
     """
-    app = FastAPI(title="Orquestador Microservice", version="0.1.0")
+    app = FastAPI(
+        title="Orquestador Microservice",
+        version="0.1.0",
+        lifespan=lifespan,
+    )
 
     # Middleware
     # pause_middleware se registra primero (queda más interno) y
