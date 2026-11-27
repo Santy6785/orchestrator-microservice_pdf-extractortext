@@ -76,7 +76,8 @@ curl http://localhost:8000/api/v1/control/health
 | `EXTRACTOR_TIMEOUT_SECONDS` | Timeout del cliente Extractor, en segundos | `30.0` |
 | `PERSISTENCE_TIMEOUT_SECONDS` | Timeout del cliente Persistencia, en segundos | `5.0` |
 | `HEALTH_TIMEOUT_SECONDS` | Timeout de los clientes usados por `/control/health`, en segundos | `2.0` |
-| `INTERNAL_CONTROL_TOKEN` | Token opcional para proteger endpoints de control internos (`/pause`, `/resume`, `/shutdown`, `/metrics`, `/trace`). Si no se configura, se permite acceso desde hosts internos (loopback). | *none* |
+| `ENVIRONMENT` | Entorno de ejecución (`development`, `staging`, `production`). En `production` se exige `INTERNAL_CONTROL_TOKEN`. | `development` |
+| `INTERNAL_CONTROL_TOKEN` | Token para proteger endpoints de control internos (`/pause`, `/resume`, `/shutdown`, `/metrics`, `/trace`). Si no se configura, solo se permite acceso desde hosts internos (loopback). Obligatorio en `production`. | *none* |
 
 ## API reference
 
@@ -103,6 +104,8 @@ curl http://localhost:8000/api/v1/control/health
 | `POST` | `/shutdown` | Apagado seguro con drenado de peticiones activas y SIGTERM. | Interno |
 
 > **Endpoints internos:** `/trace`, `/metrics`, `/pause`, `/resume` y `/shutdown` no están expuestos públicamente a través de Traefik. Solo son accesibles desde hosts internos (loopback) o presentando el header `X-Internal-Token` con el valor configurado en `INTERNAL_CONTROL_TOKEN`.
+>
+> **Nota en Docker:** la IP que ve el orquestador es la del cliente directo (otro contenedor o el gateway), no la del usuario final. En una red compartida de Docker, cualquier contenedor puede alcanzar estos endpoints si no hay `INTERNAL_CONTROL_TOKEN` configurado. En despliegues productivos, configura el token y ejecuta con `ENVIRONMENT=production` (la app fallará al arrancar si falta el token en ese entorno).
 
 Full OpenAPI docs are available at `http://localhost:8000/docs`.
 

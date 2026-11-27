@@ -1,4 +1,4 @@
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -32,9 +32,24 @@ class Settings(BaseSettings):
     extractor_timeout_seconds: float = Field(30.0, gt=0)
     persistence_timeout_seconds: float = Field(5.0, gt=0)
     health_timeout_seconds: float = Field(2.0, gt=0)
+    environment: str = Field(
+        "development",
+        description="Entorno de ejecución: development, staging o production",
+    )
     internal_control_token: str | None = Field(
         None, description="Token opcional para acceso a endpoints de control internos"
     )
+
+    @model_validator(mode="after")
+    def _require_internal_token_in_production(self) -> "Settings":
+        """Exige INTERNAL_CONTROL_TOKEN cuando el entorno es production."""
+        if self.environment == "production" and not self.internal_control_token:
+            raise ValueError(
+                "INTERNAL_CONTROL_TOKEN es obligatorio cuando ENVIRONMENT=production. "
+                "Configure un token para proteger los endpoints de control internos "
+                "(/pause, /resume, /shutdown, /metrics, /trace)."
+            )
+        return self
 
     model_config = SettingsConfigDict(
         env_file=".env",

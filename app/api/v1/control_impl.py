@@ -8,12 +8,16 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, status
 from fastapi.responses import JSONResponse
 
 from app.core import middleware
+from app.core import signals
 from app.core.metrics import get_metrics_collector
 from app.schemas.errors import ErrorResponse
 
 logger = logging.getLogger(__name__)
 
-GRACE_PERIOD_SECONDS = 15.0
+# Coherente con el signal handler (signals.py, 20s) y con
+# docker-compose stop_grace_period (20s). Debe ser <= stop_grace_period para
+# que Docker no envíe SIGKILL antes de que la app termine su drenado.
+GRACE_PERIOD_SECONDS = 20.0
 POLL_INTERVAL_SECONDS = 0.05
 
 
@@ -52,6 +56,24 @@ async def shutdown_endpoint(
     request: Request,
     background_tasks: BackgroundTasks,
 ) -> JSONResponse:
+    # Si el apagado ya fue iniciado por una señal (SIGTERM/SIGINT de Docker),
+    # no se acepta un segundo apagado vía endpoint.
+    if signals.is_signal_shutdown_started():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "conflict",
+                "detail": (
+                    "El apagado ya se encuentra en progreso iniciado por señal."
+                ),
+            },
+        )
+
+    # Marca que el apagado está en curso para evitar que el SIGTERM que este
+    # propio endpoint se envía a sí mismo dispare un segundo drenado vía
+    # signal handler.
+    signals.mark_signal_shutdown_started()
+
     if not await middleware.set_shutting_down(True):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,

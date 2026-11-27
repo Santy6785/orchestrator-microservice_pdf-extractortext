@@ -48,9 +48,13 @@ _CONTROL_ROUTES = frozenset(
     }
 )
 
-# Hosts permitidos para acceso interno (loopback y TestClient).
+# Hosts permitidos para acceso interno (loopback y clientes de prueba).
+# ``testclient`` es el host que reporta Starlette TestClient; ``testserver`` es
+# el nombre histórico. Ambos representan el entorno de prueba local, equivalente
+# a loopback. En producción real un contenedor vecino reporta su IP de red Docker
+# (p. ej. 172.x.x.x), que NO esta aqui y por tanto queda bloqueado sin token.
 _INTERNAL_HOSTS = frozenset(
-    {"127.0.0.1", "::1", "localhost", "0.0.0.0", "testserver"}
+    {"127.0.0.1", "::1", "localhost", "0.0.0.0", "testserver", "testclient"}
 )
 
 # Cabecera opcional para token de control interno.
@@ -123,9 +127,12 @@ async def internal_access_middleware(request: Request, call_next):
     """Restringe el acceso a endpoints de control internos.
 
     Solo permite conexiones desde hosts loopback o que presenten el header
-    ``X-Internal-Token`` con el valor configurado. Cuando no se configura
-    ningún token (modo desarrollo), se permite el acceso desde cualquier host,
-    asumiendo que el operador despliega en una red de confianza.
+    ``X-Internal-Token`` con el valor configurado.
+
+    Cuando no se configura ningún token (modo desarrollo), el acceso se
+    restringe a hosts internos (loopback / TestClient); no se abre a cualquier
+    host, ya que en Docker la IP del cliente puede no ser intuitiva y un
+    contenedor vecino de la red compartida podría alcanzar estos endpoints.
 
     Los demás reciben HTTP 403.
     """
@@ -134,17 +141,14 @@ async def internal_access_middleware(request: Request, call_next):
 
     expected_token = _get_internal_token()
 
-    # Si no hay token configurado (modo desarrollo), permitir acceso.
-    if expected_token is None:
-        return await call_next(request)
-
     # Con token configurado, exigir token válido o host loopback.
-    internal_token = request.headers.get(_INTERNAL_TOKEN_HEADER)
-    token_ok = internal_token is not None and internal_token == expected_token
+    if expected_token:
+        internal_token = request.headers.get(_INTERNAL_TOKEN_HEADER)
+        token_ok = internal_token is not None and internal_token == expected_token
+        if token_ok:
+            return await call_next(request)
 
-    if token_ok:
-        return await call_next(request)
-
+    # Sin token válido (incluye modo desarrollo sin token): solo loopback.
     client_host = request.client.host if request.client else ""
     is_loopback = client_host in _INTERNAL_HOSTS
     try:

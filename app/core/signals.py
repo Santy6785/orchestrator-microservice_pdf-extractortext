@@ -21,16 +21,37 @@ logger = logging.getLogger(__name__)
 _shutdown_started = False
 
 
+def is_signal_shutdown_started() -> bool:
+    """Devuelve True si el apagado por señal (SIGTERM/SIGINT) ya se inició."""
+    return _shutdown_started
+
+
+def mark_signal_shutdown_started() -> None:
+    """Marca que el apagado por señal ya está en curso, evitando reentrada."""
+    global _shutdown_started
+    _shutdown_started = True
+
+
 async def _drain_and_exit(grace_period_seconds: float = 20.0) -> None:
     """Drena solicitudes activas y finaliza el proceso.
 
     Se invoca ante recepción de SIGTERM/SIGINT. El middleware ya rechazará
     nuevas solicitudes (no-control) porque _shutting_down está en True.
+
+    Si el apagado ya fue iniciado por el endpoint /shutdown
+    (_shutdown_started == True), no se repite el drenado; únicamente se
+    termina el proceso porque SIGTERM indica que el contenedor/Docker espera
+    que el proceso salga.
     """
     global _shutdown_started
 
     if _shutdown_started:
-        return
+        remaining = middleware.get_active_requests()
+        logger.info(
+            "Signal received while shutdown already in progress; exiting "
+            "(remaining_active_requests=%d)", remaining
+        )
+        sys.exit(0 if remaining == 0 else 1)
     _shutdown_started = True
 
     await middleware.set_shutting_down(True)
