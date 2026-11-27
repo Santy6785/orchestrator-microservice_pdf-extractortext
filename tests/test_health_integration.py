@@ -6,6 +6,7 @@ import os
 os.environ["EXTRACTOR_SERVICE_URL"] = "http://extractor"
 os.environ["PERSISTENCE_SERVICE_URL"] = "http://persistence:8000"
 
+import asyncio
 import httpx
 import respx
 from fastapi.testclient import TestClient
@@ -140,3 +141,202 @@ def test_health_clientes_usan_health_timeout(monkeypatch):
     assert persistence.timeout == 4.0
     assert extractor.timeout != s.extractor_timeout_seconds
     assert persistence.timeout != s.persistence_timeout_seconds
+
+
+# ---------------------------------------------------------------------------
+# Liveness
+# ---------------------------------------------------------------------------
+
+
+@respx.mock
+def test_liveness_healthy():
+    """Liveness no llama a dependencias y devuelve 200."""
+    response = client.get("/api/v1/control/health/live")
+    assert response.status_code == 200
+    data = response.json()
+    assert data == {"orchestrator": "alive"}
+
+
+# ---------------------------------------------------------------------------
+# Readiness
+# ---------------------------------------------------------------------------
+
+
+@respx.mock
+def test_readiness_healthy_all_dependencies():
+    """Readiness devuelve 200 cuando Extractor y Persistencia responden bien."""
+    extractor_mock = respx.get("http://extractor/health").mock(
+        return_value=Response(200, json={"status": "ok"})
+    )
+    persistence_mock = respx.get("http://persistence:8000/health/ready").mock(
+        return_value=Response(200, json={"status": "ready"})
+    )
+
+    response = client.get("/api/v1/control/health/ready")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["orchestrator"] == "healthy"
+    assert data["extractor"] == "ok"
+    assert data["persistence"] == "ready"
+    assert extractor_mock.called
+    assert persistence_mock.called
+
+
+@respx.mock
+def test_readiness_extractor_unhealthy():
+    """Readiness devuelve 503 cuando Extractor no responde."""
+    extractor_mock = respx.get("http://extractor/health").mock(
+        side_effect=httpx.ConnectError("connection failed")
+    )
+    persistence_mock = respx.get("http://persistence:8000/health/ready").mock(
+        return_value=Response(200, json={"status": "ready"})
+    )
+
+    response = client.get("/api/v1/control/health/ready")
+    assert response.status_code == 503
+    data = response.json()
+    assert data["orchestrator"] == "healthy"
+    assert data["extractor"] == "unreachable"
+    assert data["persistence"] == "ready"
+    assert extractor_mock.called
+    assert persistence_mock.called
+
+
+@respx.mock
+def test_readiness_persistence_unhealthy():
+    """Readiness devuelve 503 cuando Persistencia no responde."""
+    extractor_mock = respx.get("http://extractor/health").mock(
+        return_value=Response(200, json={"status": "ok"})
+    )
+    persistence_mock = respx.get("http://persistence:8000/health/ready").mock(
+        side_effect=httpx.ConnectError("connection failed")
+    )
+
+    response = client.get("/api/v1/control/health/ready")
+    assert response.status_code == 503
+    data = response.json()
+    assert data["orchestrator"] == "healthy"
+    assert data["extractor"] == "ok"
+    assert data["persistence"] == "unreachable"
+    assert extractor_mock.called
+    assert persistence_mock.called
+
+
+@respx.mock
+def test_readiness_extractor_timeout():
+    """Readiness trata el timeout de Extractor como unreachable."""
+    async def slow_response(*args, **kwargs):
+        await asyncio.sleep(10)
+        return Response(200, json={"status": "ok"})
+
+    extractor_mock = respx.get("http://extractor/health").mock(
+        side_effect=slow_response
+    )
+    persistence_mock = respx.get("http://persistence:8000/health/ready").mock(
+        return_value=Response(200, json={"status": "ready"})
+    )
+
+    response = client.get("/api/v1/control/health/ready")
+    assert response.status_code == 503
+    data = response.json()
+    assert data["orchestrator"] == "healthy"
+    assert data["extractor"] == "unreachable"
+    assert data["persistence"] == "ready"
+
+
+@respx.mock
+def test_readiness_persistence_timeout():
+    """Readiness trata el timeout de Persistencia como unreachable."""
+    async def slow_response(*args, **kwargs):
+        await asyncio.sleep(10)
+        return Response(200, json={"status": "ready"})
+
+    extractor_mock = respx.get("http://extractor/health").mock(
+        return_value=Response(200, json={"status": "ok"})
+    )
+    persistence_mock = respx.get("http://persistence:8000/health/ready").mock(
+        side_effect=slow_response
+    )
+
+    response = client.get("/api/v1/control/health/ready")
+    assert response.status_code == 503
+    data = response.json()
+    assert data["orchestrator"] == "healthy"
+    assert data["extractor"] == "ok"
+    assert data["persistence"] == "unreachable"
+
+
+@respx.mock
+def test_readiness_global_timeout_both_dependencies_unreachable():
+    """El timeout global acota el chequeo y marca ambas dependencias como
+    unreachable sin bloquear indefinidamente."""
+    async def slow_response(*args, **kwargs):
+        await asyncio.sleep(10)
+        return Response(200, json={"status": "ok"})
+
+    extractor_mock = respx.get("http://extractor/health").mock(
+        side_effect=slow_response
+    )
+    persistence_mock = respx.get("http://persistence:8000/health/ready").mock(
+        side_effect=slow_response
+    )
+
+    response = client.get("/api/v1/control/health/ready")
+    assert response.status_code == 503
+    data = response.json()
+    assert data["orchestrator"] == "healthy"
+    assert data["extractor"] == "unreachable"
+    assert data["persistence"] == "unreachable"
+
+
+# ---------------------------------------------------------------------------
+# Health (alias de readiness) - compatibilidad con Docker y Traefik
+# ---------------------------------------------------------------------------
+
+
+@respx.mock
+def test_health_alias_matches_readiness():
+    """GET /health devuelve lo mismo que GET /health/ready."""
+    extractor_mock = respx.get("http://extractor/health").mock(
+        return_value=Response(200, json={"status": "ok"})
+    )
+    persistence_mock = respx.get("http://persistence:8000/health/ready").mock(
+        return_value=Response(200, json={"status": "ready"})
+    )
+
+    response_health = client.get("/api/v1/control/health")
+    response_ready = client.get("/api/v1/control/health/ready")
+
+    assert response_health.status_code == response_ready.status_code == 200
+    assert response_health.json() == response_ready.json()
+    assert extractor_mock.called
+    assert persistence_mock.called
+
+
+# ---------------------------------------------------------------------------
+# Health checks no quedan bloqueados (timeout global)
+# ---------------------------------------------------------------------------
+
+
+@respx.mock
+def test_health_checks_do_not_block_indefinitely():
+    """Con ambas dependencias lentas, el endpoint responde en tiempo
+    acotado por el timeout global en lugar de bloquear para siempre."""
+    import time
+
+    async def very_slow_response(*args, **kwargs):
+        await asyncio.sleep(30)
+        return Response(200, json={"status": "ok"})
+
+    respx.get("http://extractor/health").mock(side_effect=very_slow_response)
+    respx.get("http://persistence:8000/health/ready").mock(
+        side_effect=very_slow_response
+    )
+
+    start = time.monotonic()
+    response = client.get("/api/v1/control/health/ready")
+    elapsed = time.monotonic() - start
+
+    assert response.status_code == 503
+    # El timeout global es 5s; la respuesta debe llegar bien antes de 30s.
+    assert elapsed < 10.0, f"El health check tardó {elapsed:.2f}s (demasiado)"

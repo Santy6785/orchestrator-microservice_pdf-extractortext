@@ -23,6 +23,19 @@ WRITE_SIDE_TRANSPORT_ERRORS = (
 )
 
 
+def _service_name_from_url(service_url: str) -> str:
+    """Extrae un nombre corto de servicio desde la URL base.
+
+    Ejemplos:
+      http://extractor          -> extractor
+      http://persistence:8000   -> persistence
+    """
+    host = service_url.split("://", 1)[-1]
+    host = host.split(":", 1)[0]
+    host = host.split("/", 1)[0]
+    return host or "unknown"
+
+
 class BaseClient:
     """Base HTTP client with retry, timeout and request‑ID propagation.
 
@@ -48,7 +61,27 @@ class BaseClient:
     def __init__(self, service_url: str, timeout: float = 5.0):
         self.timeout = timeout
         self.service_url = service_url
+        self._service_name = _service_name_from_url(service_url)
         self._client = httpx.AsyncClient(timeout=self.timeout)
+
+    async def _record_retry(
+        self, method: str, url: str, attempt: int, exc: Any
+    ) -> None:
+        """Registra un reintento en métricas y logs estructurados."""
+        from app.core.metrics import get_metrics_collector
+
+        collector = get_metrics_collector()
+        await collector.record_downstream_retry(self._service_name)
+        request_id = request_id_var.get() or ""
+        logger.warning(
+            "%s request to %s failed on attempt %d/%d: %s (request_id=%s)",
+            method,
+            url,
+            attempt,
+            MAX_ATTEMPTS,
+            exc,
+            request_id,
+        )
 
     async def _request(self, method: str, path: str, **kwargs) -> Any:
         url = f"{self.service_url}{path}"
@@ -71,14 +104,7 @@ class BaseClient:
                 retryable = idempotent or isinstance(exc, WRITE_SIDE_TRANSPORT_ERRORS)
                 if not retryable or attempt == MAX_ATTEMPTS:
                     raise
-                logger.warning(
-                    "%s request to %s failed on attempt %d/%d: %s",
-                    method,
-                    url,
-                    attempt,
-                    MAX_ATTEMPTS,
-                    exc,
-                )
+                await self._record_retry(method, url, attempt, exc)
                 await asyncio.sleep(BACKOFF[attempt - 1])
                 continue
 
@@ -90,13 +116,19 @@ class BaseClient:
                 and response.status_code in RETRYABLE_STATUS_CODES
                 and attempt < MAX_ATTEMPTS
             ):
+                request_id = request_id_var.get() or ""
+                from app.core.metrics import get_metrics_collector
+
+                collector = get_metrics_collector()
+                await collector.record_downstream_retry(self._service_name)
                 logger.warning(
-                    "%s request to %s failed on attempt %d/%d: HTTP %d",
+                    "%s request to %s failed on attempt %d/%d: HTTP %d (request_id=%s)",
                     method,
                     url,
                     attempt,
                     MAX_ATTEMPTS,
                     response.status_code,
+                    request_id,
                 )
                 await asyncio.sleep(BACKOFF[attempt - 1])
                 continue

@@ -33,8 +33,8 @@ async def _drain_and_exit(grace_period_seconds: float = 20.0) -> None:
         return
     _shutdown_started = True
 
-    middleware.set_shutting_down(True)
-    middleware.set_pause(True)
+    await middleware.set_shutting_down(True)
+    await middleware.set_pause(True)
 
     deadline = time.monotonic() + grace_period_seconds
     while middleware.get_active_requests() > 0 and time.monotonic() < deadline:

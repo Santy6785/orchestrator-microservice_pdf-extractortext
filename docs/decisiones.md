@@ -151,6 +151,14 @@ Este documento registra las decisiones de arquitectura (**D1–D9**) adoptadas p
   2. *Middleware de estado (`PauseMiddleware`) + endpoints `/api/v1/health`, `/pause`, `/resume`, `/shutdown` y `/metrics`:* Intercepta peticiones entrantes cuando el flag de pausa/apagado está activo devolviendo `503 Service Unavailable` (excepto rutas de control), mientras `/health` verifica la conectividad real hacia Extractor y Persistencia.
 - **Decisión:**
   Se adopta la **Opción 2**. Se implementa el middleware de control de admisión junto con los endpoints operativos en `app/api/v1/control.py`.
+- **Implementación efectiva (issue #55):**
+  - Máquina de estados con cuatro estados: `RUNNING`, `PAUSED`, `SHUTTING_DOWN`, `STOPPED`.
+  - Transiciones válidas: `RUNNING → PAUSED → RUNNING`, `RUNNING/PAUSED → SHUTTING_DOWN → STOPPED`.
+  - Transiciones inválidas devuelven HTTP 409 Conflict.
+  - Protección contra race conditions mediante `asyncio.Lock` para estado y contador de peticiones activas.
+  - `/pause`, `/resume`, `/shutdown`, `/metrics` y `/trace` protegidos por `internal_access_middleware` (solo hosts loopback o `X-Internal-Token`).
+  - Apagado graceful: drenado de peticiones activas con `GRACE_PERIOD_SECONDS` (15s) y envío de `SIGTERM`.
+  - Manejadores de señal `SIGTERM`/`SIGINT` registrados en `lifespan` para drenado antes de `sys.exit()`.
 - **Consecuencias:**
   - *Positivas:* Permite mantenimiento y drenado seguro de peticiones sin pérdida de tráfico en vuelo y brinda visibilidad real del estado de dependencias a Traefik/Docker.
   - *Negativas:* Requiere mantener estado en memoria del flag de pausa por instancia de proceso.

@@ -8,6 +8,7 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, status
 from fastapi.responses import JSONResponse
 
 from app.core import middleware
+from app.core.metrics import get_metrics_collector
 from app.schemas.errors import ErrorResponse
 
 logger = logging.getLogger(__name__)
@@ -51,18 +52,21 @@ async def shutdown_endpoint(
     request: Request,
     background_tasks: BackgroundTasks,
 ) -> JSONResponse:
-    if middleware.is_shutting_down():
+    if not await middleware.set_shutting_down(True):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={
                 "code": "conflict",
-                "detail": "El proceso de apagado ya se encuentra en progreso.",
+                "detail": (
+                    "El proceso de apagado ya se encuentra en progreso o el "
+                    "servicio está detenido."
+                ),
             },
         )
 
+    await middleware.set_pause(True)
+
     active = middleware.get_active_requests()
-    middleware.set_shutting_down(True)
-    middleware.set_pause(True)
     background_tasks.add_task(_drain_and_terminate, GRACE_PERIOD_SECONDS)
 
     return JSONResponse(
@@ -87,15 +91,17 @@ pause = APIRouter()
     },
 )
 async def pause_endpoint(request: Request) -> JSONResponse:
-    if middleware.is_shutting_down():
+    if not await middleware.set_pause(True):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={
                 "code": "conflict",
-                "detail": "No se puede pausar: el servicio esta en proceso de apagado.",
+                "detail": (
+                    "No se puede pausar: el servicio está en proceso de "
+                    "apagado o detenido."
+                ),
             },
         )
-    middleware.set_pause(True)
     return JSONResponse(content={"message": "Service paused"})
 
 
@@ -111,15 +117,14 @@ resume = APIRouter()
     },
 )
 async def resume_endpoint(request: Request) -> JSONResponse:
-    if middleware.is_shutting_down():
+    if not await middleware.set_pause(False):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={
                 "code": "conflict",
-                "detail": "No se puede reanudar: servicio en apagado.",
+                "detail": "No se puede reanudar: servicio en apagado o detenido.",
             },
         )
-    middleware.set_pause(False)
     return JSONResponse(content={"message": "Service resumed"})
 
 
@@ -130,11 +135,20 @@ metrics = APIRouter()
     "/metrics",
     response_model=dict,
     status_code=status.HTTP_200_OK,
-    responses={500: {"model": ErrorResponse}},
+    responses={
+        200: {"model": dict},
+        403: {"model": ErrorResponse},
+    },
 )
 async def metrics_endpoint(request: Request) -> dict:
-    return {
-        "uptime_seconds": 0,
-        "requests_total": 0,
-        "errors_total": 0,
-    }
+    """Devuelve una instantánea de las métricas operativas del Orchestrator.
+
+    Incluye: uptime, requests totales y por estado/método/endpoint, errores,
+    latencias, llamadas y reintentos downstream, y requests activas.
+
+    El acceso está restringido por ``internal_access_middleware`` (solo hosts
+    internos o con ``X-Internal-Token`` válido).
+    """
+    collector = get_metrics_collector()
+    data = await collector.snapshot()
+    return JSONResponse(status_code=status.HTTP_200_OK, content=data)

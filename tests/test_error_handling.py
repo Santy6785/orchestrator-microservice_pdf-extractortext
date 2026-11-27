@@ -178,7 +178,7 @@ class TestPauseMiddleware:
         """Cuando el servicio está pausado, la respuesta es JSON 503."""
         from app.core import middleware as mw
 
-        mw.set_pause(True)
+        mw._state = mw.STATE_PAUSED
         try:
             app = create_app()
 
@@ -196,7 +196,7 @@ class TestPauseMiddleware:
             assert body["code"] == "service_paused"
             assert "request_id" in body
         finally:
-            mw.set_pause(False)
+            mw._state = mw.STATE_RUNNING
 
 
 # ---------------------------------------------------------------------------

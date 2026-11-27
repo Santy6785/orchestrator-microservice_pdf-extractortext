@@ -360,7 +360,7 @@ class TestOtherErrors:
         """Servicio pausado -> 503 con contrato de error JSON."""
         from app.core import middleware as mw
 
-        mw.set_pause(True)
+        mw._state = mw.STATE_PAUSED
         try:
             app = create_app()
 
@@ -381,7 +381,7 @@ class TestOtherErrors:
             assert body["request_id"] == "req-paused-503"
             assert "Traceback" not in str(body)
         finally:
-            mw.set_pause(False)
+            mw._state = mw.STATE_RUNNING
 
 
 

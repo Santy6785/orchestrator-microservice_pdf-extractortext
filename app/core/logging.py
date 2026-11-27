@@ -23,16 +23,23 @@ _LEVEL_ALIASES: dict[str, int] = {
 _AUTH_HEADER_RE = re.compile(
     r"(?i)(authorization\s*[:=]\s*(?:bearer\s+)?|bearer\s+)([^\s\"',;\}]+)"
 )
+_COOKIE_RE = re.compile(
+    r"(?i)(cookie\s*[:=]\s*|set-cookie\s*[:=]\s*)([^;\s\"',}]+)"
+)
 _PDF_BYTES_RE = re.compile(r"(?:b['\"])?%PDF-[\s\S]*")
+_USER_PATH_RE = re.compile(r"(?:[a-zA-Z]:)?[/\\](?:Users|home)[/\\][^/\s\"',;}]+")
 
 
 def sanitize_log_text(text: str) -> str:
-    """Redact sensitive tokens, authorization headers, and raw PDF byte dumps."""
+    """Redact sensitive tokens, authorization headers, cookies, PDF dumps,
+    and user file paths from log text."""
     if not text:
         return text
     sanitized = _AUTH_HEADER_RE.sub(r"\1[REDACTED]", text)
+    sanitized = _COOKIE_RE.sub(r"\1[REDACTED]", sanitized)
     if "%PDF-" in sanitized:
         sanitized = _PDF_BYTES_RE.sub("[REDACTED_PDF_BYTES]", sanitized)
+    sanitized = _USER_PATH_RE.sub("[REDACTED_PATH]", sanitized)
     return sanitized
 
 
@@ -48,7 +55,9 @@ class JsonLogFormatter(logging.Formatter):
         if record.exc_info and not record.exc_text:
             record.exc_text = self.formatException(record.exc_info)
         if record.exc_text:
-            raw_message = f"{raw_message}\n{record.exc_text}"
+            # Sanitize stack traces to avoid leaking internal paths or secrets.
+            safe_exc_text = sanitize_log_text(record.exc_text)
+            raw_message = f"{raw_message}\n{safe_exc_text}"
 
         safe_message = sanitize_log_text(raw_message)
         current_request_id = getattr(record, "request_id", None) or (
@@ -74,17 +83,26 @@ def resolve_log_level(level_value: str | None = None) -> int:
 
 
 def configure_logging(level_value: str | None = None) -> None:
-    """Configure root logger to emit structured JSON logs to stdout."""
+    """Configure root logger to emit structured JSON logs to stdout/stderr.
+
+    Emits all logs to ``stdout`` and additionally emits ``WARNING`` and above
+    to ``stderr`` for container log separation (e.g. Docker).
+    """
     level = resolve_log_level(level_value)
 
-    handler = logging.StreamHandler(sys.stdout)
-    handler.setLevel(level)
-    handler.setFormatter(JsonLogFormatter(service=SERVICE_NAME))
+    stdout_handler = logging.StreamHandler(sys.stdout)
+    stdout_handler.setLevel(level)
+    stdout_handler.setFormatter(JsonLogFormatter(service=SERVICE_NAME))
+
+    stderr_handler = logging.StreamHandler(sys.stderr)
+    stderr_handler.setLevel(logging.WARNING)
+    stderr_handler.setFormatter(JsonLogFormatter(service=SERVICE_NAME))
 
     root_logger = logging.getLogger()
     root_logger.handlers.clear()
     root_logger.setLevel(level)
-    root_logger.addHandler(handler)
+    root_logger.addHandler(stdout_handler)
+    root_logger.addHandler(stderr_handler)
 
     # Reduce noisy logs from third-party libraries while keeping JSON output
     logging.getLogger("httpx").setLevel(logging.WARNING)
@@ -96,5 +114,11 @@ def configure_logging(level_value: str | None = None) -> None:
 
     uvicorn_access = logging.getLogger("uvicorn.access")
     uvicorn_access.handlers.clear()
-    uvicorn_access.propagate = True
+    uvicorn_access.propagate = False
     uvicorn_access.setLevel(level)
+
+    # Access logger dedicado para nuestra instrumentación estructurada.
+    app_access = logging.getLogger("app.access")
+    app_access.handlers.clear()
+    app_access.propagate = True
+    app_access.setLevel(level)

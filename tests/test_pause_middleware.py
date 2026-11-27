@@ -59,7 +59,7 @@ def _fresh_client() -> TestClient:
 
 def _reset_pause() -> None:
     """Asegura que el flag global de pausa quede inactivo entre tests."""
-    mw.set_pause(False)
+    mw._state = mw.STATE_RUNNING
 
 
 # ---------------------------------------------------------------------------
@@ -108,7 +108,7 @@ def test_pause_endpoint_activates_pause():
 
 def test_documents_blocked_when_paused():
     """Con pausa activa, GET /api/v1/documents/ responde 503 JSON con contrato O-16."""
-    mw.set_pause(True)
+    mw._state = mw.STATE_PAUSED
     try:
         client = _fresh_client()
         response = client.get("/api/v1/documents/")
@@ -135,7 +135,7 @@ def test_documents_blocked_when_paused():
 
 def test_resume_endpoint_deactivates_pause():
     """POST /api/v1/control/resume devuelve 200 y desactiva el flag de pausa."""
-    mw.set_pause(True)
+    mw._state = mw.STATE_PAUSED
     try:
         client = _fresh_client()
         response = client.post("/api/v1/control/resume")
@@ -162,7 +162,7 @@ def test_health_not_blocked_when_paused():
         return_value=httpx.Response(200, json={"status": "ready"})
     )
 
-    mw.set_pause(True)
+    mw._state = mw.STATE_PAUSED
     try:
         client = _fresh_client()
         response = client.get("/api/v1/control/health")

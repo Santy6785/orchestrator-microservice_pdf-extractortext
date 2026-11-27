@@ -32,6 +32,9 @@ class Settings(BaseSettings):
     extractor_timeout_seconds: float = Field(30.0, gt=0)
     persistence_timeout_seconds: float = Field(5.0, gt=0)
     health_timeout_seconds: float = Field(2.0, gt=0)
+    internal_control_token: str | None = Field(
+        None, description="Token opcional para acceso a endpoints de control internos"
+    )
 
     model_config = SettingsConfigDict(
         env_file=".env",

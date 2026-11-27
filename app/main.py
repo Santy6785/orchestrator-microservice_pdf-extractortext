@@ -96,12 +96,20 @@ def create_app() -> FastAPI:
     )
 
     # Middleware
-    # pause_middleware se registra primero (queda más interno) y
-    # request_id_middleware segundo (queda más externo, corre primero en la
-    # fase de request). Así request.state.request_id ya está seteado cuando
-    # pause_middleware evalúa la exclusión y genera el 503, respetando el
-    # contrato uniforme de errores (detail, code, request_id) de O-16.
+    # Orden de registro (último en ejecutarse primero en la fase de request):
+    #   1. pause_middleware           (más externo, rechaza si paused/shutting_down)
+    #   2. internal_access_middleware (restringe endpoints de control internos)
+    #   3. trace_capture_middleware   (captura metadata de request/response)
+    #   4. metrics_middleware         (captura métricas HTTP de cada petición)
+    #   5. access_logging_middleware  (access logging estructurado por petición)
+    #   6. request_id_middleware      (setea request_id_var PRIMERO; se ejecuta
+    #      primero en request phase para que el ContextVar esté disponible para
+    #      los middlewares anteriores y para los clientes downstream)
     app.middleware("http")(middleware.pause_middleware)
+    app.middleware("http")(middleware.internal_access_middleware)
+    app.middleware("http")(middleware.trace_capture_middleware)
+    app.middleware("http")(middleware.metrics_middleware)
+    app.middleware("http")(middleware.access_logging_middleware)
     app.middleware("http")(middleware.request_id_middleware)
 
     # Include Routers

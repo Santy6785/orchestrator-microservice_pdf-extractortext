@@ -20,8 +20,7 @@ class _DummyIngestionService(IngestionService):
 
 
 def _reset_lifecycle() -> None:
-    mw.set_shutting_down(False)
-    mw.set_pause(False)
+    mw._state = mw.STATE_RUNNING
 
 
 def _fresh_client() -> TestClient:
@@ -113,8 +112,7 @@ def test_middleware_blocks_new_requests_when_shutting_down():
     """Verifica que el middleware rechaza nuevas solicitudes con 503 durante el apagado."""
     _reset_lifecycle()
     try:
-        mw.set_shutting_down(True)
-        mw.set_pause(True)
+        mw._state = mw.STATE_SHUTTING_DOWN
 
         client = _fresh_client()
         response = client.get(
@@ -135,8 +133,7 @@ def test_active_requests_counter_increments_and_decrements():
     try:
         assert mw.get_active_requests() == 0
 
-        mw.set_pause(False)
-        mw.set_shutting_down(False)
+        mw._state = mw.STATE_RUNNING
 
         # Simular una solicitud activa
         mw._active_requests += 1
