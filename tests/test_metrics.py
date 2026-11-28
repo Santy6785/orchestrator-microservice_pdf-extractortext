@@ -12,14 +12,13 @@ Cubre:
 
 from __future__ import annotations
 
-import asyncio
 from unittest.mock import patch
 
 import httpx
 import respx
 from fastapi.testclient import TestClient
 
-from app.core.metrics import get_metrics_collector, metrics_collector
+from app.core.metrics import metrics_collector
 from app.main import create_app
 
 
@@ -140,7 +139,9 @@ def test_metrics_latency_recorded():
     """La latencia se registra en el histograma de request_latency_ms."""
     client = _fresh_client()
     # Llamar a un endpoint real (no /metrics, que está excluido del conteo)
-    client.get("/api/v1/control/health/live", headers={"X-Request-ID": "req-metrics-003"})
+    client.get(
+        "/api/v1/control/health/live", headers={"X-Request-ID": "req-metrics-003"}
+    )
 
     data = client.get("/api/v1/control/metrics").json()
     hist = data["request_latency_ms"]
@@ -292,7 +293,7 @@ def test_metrics_collector_reset_between_tests():
     """El colector se reinicia correctamente entre tests."""
     client1 = _fresh_client()
     client1.get("/api/v1/control/metrics")
-    count1 = client1.get("/api/v1/control/metrics").json()["requests_total"]
+    client1.get("/api/v1/control/metrics").json()["requests_total"]
 
     client2 = _fresh_client()
     count2 = client2.get("/api/v1/control/metrics").json()["requests_total"]

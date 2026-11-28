@@ -16,7 +16,6 @@ import asyncio
 import io
 import json
 import logging
-import sys
 
 import httpx
 import respx
@@ -25,7 +24,6 @@ from fastapi.testclient import TestClient
 from app.core.logging import (
     JsonLogFormatter,
     configure_logging,
-    sanitize_log_text,
 )
 from app.core.middleware import request_id_var
 from app.main import create_app
@@ -169,7 +167,10 @@ def test_sensitive_headers_redacted_in_logs(monkeypatch):
     raw = buffer.getvalue()
     assert "secret-token" not in raw
     assert "session=xyz" not in raw
-    assert "[REDACTED]" in raw or "Authorization" not in raw.split("Authorization")[-1] if "Authorization" in raw else True
+    if "Authorization" in raw:
+        assert "[REDACTED]" in raw or "Authorization" not in raw.split(
+            "Authorization"
+        )[-1]
 
 
 # ---------------------------------------------------------------------------
@@ -233,16 +234,18 @@ def test_error_log_without_secret_exposure(monkeypatch):
 
 def test_no_handler_duplication(monkeypatch):
     """configurar logging dos veces no duplica handlers en root logger."""
-    buffer1 = io.StringIO()
+    io.StringIO()
     configure_logging("INFO")
     root = logging.getLogger()
     handler_count_after_first = len(root.handlers)
 
-    buffer2 = io.StringIO()
+    io.StringIO()
     configure_logging("DEBUG")
     handler_count_after_second = len(root.handlers)
 
-    assert handler_count_after_first == handler_count_after_second == 2  # stdout + stderr
+    assert (
+        handler_count_after_first == handler_count_after_second == 2
+    )  # stdout + stderr
 
 
 # ---------------------------------------------------------------------------

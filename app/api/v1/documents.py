@@ -119,7 +119,11 @@ async def download_document(
 
     extracted_text = document.get("extracted_text", "")
     filename = document.get("filename", document_id)
-    base_name = filename.replace(".pdf", "", 1) if filename.lower().endswith(".pdf") else filename
+    base_name = (
+        filename.replace(".pdf", "", 1)
+        if filename.lower().endswith(".pdf")
+        else filename
+    )
     download_filename = f"{base_name}.md"
 
     content = extracted_text or ""

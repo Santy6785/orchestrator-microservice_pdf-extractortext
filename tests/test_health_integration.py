@@ -229,10 +229,10 @@ def test_readiness_extractor_timeout():
         await asyncio.sleep(10)
         return Response(200, json={"status": "ok"})
 
-    extractor_mock = respx.get("http://extractor/health").mock(
+    respx.get("http://extractor/health").mock(
         side_effect=slow_response
     )
-    persistence_mock = respx.get("http://persistence:8000/health/ready").mock(
+    respx.get("http://persistence:8000/health/ready").mock(
         return_value=Response(200, json={"status": "ready"})
     )
 
@@ -251,10 +251,10 @@ def test_readiness_persistence_timeout():
         await asyncio.sleep(10)
         return Response(200, json={"status": "ready"})
 
-    extractor_mock = respx.get("http://extractor/health").mock(
+    respx.get("http://extractor/health").mock(
         return_value=Response(200, json={"status": "ok"})
     )
-    persistence_mock = respx.get("http://persistence:8000/health/ready").mock(
+    respx.get("http://persistence:8000/health/ready").mock(
         side_effect=slow_response
     )
 
@@ -274,10 +274,10 @@ def test_readiness_global_timeout_both_dependencies_unreachable():
         await asyncio.sleep(10)
         return Response(200, json={"status": "ok"})
 
-    extractor_mock = respx.get("http://extractor/health").mock(
+    respx.get("http://extractor/health").mock(
         side_effect=slow_response
     )
-    persistence_mock = respx.get("http://persistence:8000/health/ready").mock(
+    respx.get("http://persistence:8000/health/ready").mock(
         side_effect=slow_response
     )
 

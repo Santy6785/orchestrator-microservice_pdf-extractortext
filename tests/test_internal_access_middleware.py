@@ -148,7 +148,8 @@ async def test_external_host_allowed_with_valid_token(path):
 @pytest.mark.asyncio
 @pytest.mark.parametrize("path", _CONTROL_ROUTES)
 async def test_external_host_forbidden_with_invalid_token(path):
-    """Con token invalido, un host externo recibe 403 aunque el token este configurado."""
+    """Con token invalido, un host externo recibe 403 aunque el token
+    este configurado."""
     original = _set_token("secret-token")
     _reset_state()
     try:
@@ -185,8 +186,9 @@ async def test_non_control_route_not_affected():
 # ---------------------------------------------------------------------------
 
 
-def test_control_endpoints_reachable_from_testclient_without_token():
-    """Desde TestClient (testserver, interno) se accede a /pause y /metrics sin token."""
+def test_control_endpoints_reachable_from_testclient_no_token():
+    """Desde TestClient (testserver, interno) se accede a /pause y /metrics
+    sin token."""
     original_token = _set_token(None)
     _reset_state()
     try:

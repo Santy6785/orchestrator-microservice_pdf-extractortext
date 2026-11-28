@@ -173,7 +173,9 @@ def test_trace_does_not_store_pdf_content():
         return_value=httpx.Response(404, json={"detail": "not found"})
     )
     respx.post("http://extractor/api/v1/extract").mock(
-        return_value=httpx.Response(200, json={"content": "texto extraído", "page_count": 1})
+        return_value=httpx.Response(
+            200, json={"content": "texto extraído", "page_count": 1}
+        )
     )
 
     client = _fresh_client()
@@ -209,7 +211,9 @@ def test_trace_does_not_store_extracted_text():
         return_value=httpx.Response(404, json={"detail": "not found"})
     )
     respx.post("http://extractor/api/v1/extract").mock(
-        return_value=httpx.Response(200, json={"content": extracted_text, "page_count": 3})
+        return_value=httpx.Response(
+            200, json={"content": extracted_text, "page_count": 3}
+        )
     )
 
     client = _fresh_client()

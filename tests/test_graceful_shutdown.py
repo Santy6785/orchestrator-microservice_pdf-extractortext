@@ -1,19 +1,17 @@
 ﻿from __future__ import annotations
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 import asyncio
 import threading
 
-import pytest
 from fastapi.testclient import TestClient
 
 from app.api.v1 import control_impl
 from app.core import middleware as mw
 from app.core import signals
-from app.core.signals import register_signal_handlers
 from app.dependencies import get_ingestion_service
-from app.main import create_app, lifespan
+from app.main import create_app
 from app.schemas.documents import DocumentUploadResponse
 from app.services.ingestion import IngestionService
 
@@ -124,7 +122,7 @@ def test_lifespan_registers_signal_handlers():
         with patch("app.main.register_signal_handlers") as mock_register:
             app = create_app()
             # lifespan se ejecuta al entrar al context manager de TestClient
-            with TestClient(app) as client:
+            with TestClient(app):
                 mock_register.assert_called_once()
                 # Verificar que se pasa el loop y un grace period
                 args, kwargs = mock_register.call_args
@@ -136,7 +134,8 @@ def test_lifespan_registers_signal_handlers():
 
 
 def test_middleware_blocks_new_requests_when_shutting_down():
-    """Verifica que el middleware rechaza nuevas solicitudes con 503 durante el apagado."""
+    """Verifica que el middleware rechaza nuevas solicitudes con 503
+    durante el apagado."""
     _reset_lifecycle()
     try:
         mw._state = mw.STATE_SHUTTING_DOWN
@@ -178,7 +177,8 @@ def test_active_requests_counter_increments_and_decrements():
 
 
 def test_in_flight_request_completes_while_new_requests_blocked():
-    """Una request que ya comenzó termina durante el shutdown; las nuevas se bloquean."""
+    """Una request ya iniciada termina durante el shutdown;
+    las nuevas se bloquean."""
     _reset_lifecycle()
     try:
         import app.api.v1.control_impl as ci
@@ -237,18 +237,21 @@ def test_in_flight_request_completes_while_new_requests_blocked():
 
 
 def test_control_routes_still_accessible_during_shutdown():
-    """Durante el shutdown, las rutas de control (/metrics, /trace) siguen accesibles."""
+    """Durante el shutdown, las rutas de control (/metrics, /trace)
+    siguen accesibles."""
     _reset_lifecycle()
     try:
         app = create_app()
-        app.dependency_overrides[get_ingestion_service] = lambda: _DummyIngestionService()
+        app.dependency_overrides[get_ingestion_service] = (
+            lambda: _DummyIngestionService()
+        )
         client = TestClient(app)
 
         with patch.object(control_impl, "_send_termination_signal"):
             shutdown_resp = client.post("/api/v1/control/shutdown")
             assert shutdown_resp.status_code == 200
 
-            # Rutas de control: no bloqueadas por el middleware de pausa (son control routes).
+            # Rutas de control: no bloqueadas por el middleware de pausa.
             metrics_resp = client.get("/api/v1/control/metrics")
             assert metrics_resp.status_code == 200
 
@@ -265,7 +268,8 @@ def test_control_routes_still_accessible_during_shutdown():
 
 
 def test_drain_terminates_after_grace_with_active_requests():
-    """Si se supera el período de gracia con requests activas, el drenado termina igual."""
+    """Si se supera el período de gracia con requests activas,
+    el drenado termina igual."""
     _reset_lifecycle()
     try:
         mw._state = mw.STATE_SHUTTING_DOWN
@@ -282,13 +286,16 @@ def test_drain_terminates_after_grace_with_active_requests():
 
 
 def test_shutdown_endpoint_returns_409_if_signal_shutdown_started():
-    """Si el apagado ya fue iniciado por señal, el endpoint /shutdown rechaza con 409."""
+    """Si el apagado ya fue iniciado por señal, el endpoint /shutdown
+    rechaza con 409."""
     _reset_lifecycle()
     try:
         signals.mark_signal_shutdown_started()
 
         app = create_app()
-        app.dependency_overrides[get_ingestion_service] = lambda: _DummyIngestionService()
+        app.dependency_overrides[get_ingestion_service] = (
+            lambda: _DummyIngestionService()
+        )
         client = TestClient(app)
 
         resp = client.post("/api/v1/control/shutdown")
@@ -306,7 +313,6 @@ def test_grace_period_coordination_with_docker():
         import app.api.v1.control_impl as ci
         from app.core import signals as sig_mod
 
-        import json
         from pathlib import Path
 
         compose_path = Path(__file__).resolve().parent.parent / "docker-compose.yml"
@@ -323,8 +329,12 @@ def test_grace_period_coordination_with_docker():
                     stop_grace = float(value)
                 break
 
-        assert stop_grace is not None, "No se encontró stop_grace_period en docker-compose.yml"
-        assert stop_grace == 20.0, f"Esperado stop_grace_period=20s, encontrado {stop_grace}s"
+        assert (
+            stop_grace is not None
+        ), "No se encontró stop_grace_period en docker-compose.yml"
+        assert stop_grace == 20.0, (
+            f"Esperado stop_grace_period=20s, encontrado {stop_grace}s"
+        )
 
         # El grace de la app (endpoint y signal handler) debe ser <= stop_grace_period
         # para que Docker no envíe SIGKILL antes de que la app termine su drenado.
@@ -332,6 +342,7 @@ def test_grace_period_coordination_with_docker():
         assert sig_mod._drain_and_exit.__defaults__[0] <= stop_grace  # default 20.0
 
         # Coherencia entre endpoint y signal handler.
-        assert ci.GRACE_PERIOD_SECONDS == sig_mod._drain_and_exit.__defaults__[0] == 20.0
+        assert ci.GRACE_PERIOD_SECONDS == sig_mod._drain_and_exit.__defaults__[0]
+        assert sig_mod._drain_and_exit.__defaults__[0] == 20.0
     finally:
         _reset_lifecycle()
